@@ -15,6 +15,7 @@ wx-contract = { path = "../../crates/wx-contract" }
 wx-planner = { path = "../../crates/wx-planner" }
 wx-policy = { path = "../../crates/wx-policy" }
 wx-provider = { path = "../../crates/wx-provider" }
+wx-router = { path = "../../crates/wx-router" }
 tower-http.workspace = true
 uuid.workspace = true
 
