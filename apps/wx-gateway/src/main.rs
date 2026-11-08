@@ -8,10 +8,13 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
+    collections::HashMap,
+    collections::hash_map::RandomState,
+    hash::{Hash, Hasher},
     net::SocketAddr,
     path::PathBuf,
-    sync::Arc,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    sync::{Arc, Mutex},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tokio::{fs, io::AsyncWriteExt};
 use tower_http::{
@@ -26,13 +29,72 @@ use wx_contract::{
 };
 use wx_policy::PolicyViolation;
 use wx_provider::{ChatMessage, ProviderClient, ProviderError, TokenUsage};
+use wx_router::{
+    ProviderProfile, RouteObjective, estimate_cost_microusd, select_provider, validate_catalog,
+};
+
+#[derive(Clone)]
+struct RuntimeProvider {
+    profile: ProviderProfile,
+    client: ProviderClient,
+}
+
+#[derive(Clone)]
+struct RateLimitState {
+    buckets: Arc<Mutex<HashMap<u64, RateBucket>>>,
+    hasher: RandomState,
+    requests_per_minute: u32,
+}
+
+struct RateBucket {
+    window_started: Instant,
+    count: u32,
+}
+
+impl RateLimitState {
+    fn new(requests_per_minute: u32) -> Self {
+        Self {
+            buckets: Arc::new(Mutex::new(HashMap::new())),
+            hasher: RandomState::new(),
+            requests_per_minute,
+        }
+    }
+
+    fn allow(&self, principal: &str) -> bool {
+        let mut hasher = self.hasher.build_hasher();
+        principal.hash(&mut hasher);
+        let key = hasher.finish();
+        let now = Instant::now();
+        let Ok(mut buckets) = self.buckets.lock() else {
+            return false;
+        };
+        let bucket = buckets.entry(key).or_insert(RateBucket {
+            window_started: now,
+            count: 0,
+        });
+        if now.duration_since(bucket.window_started) >= Duration::from_secs(60) {
+            bucket.window_started = now;
+            bucket.count = 0;
+        }
+        if bucket.count >= self.requests_per_minute {
+            return false;
+        }
+        bucket.count += 1;
+        if buckets.len() > 4096 {
+            buckets.retain(|_, item| {
+                now.duration_since(item.window_started) < Duration::from_secs(120)
+            });
+        }
+        true
+    }
+}
 
 #[derive(Clone)]
 struct GatewayState {
     api_key: Option<Arc<str>>,
-    provider: ProviderClient,
-    provider_name: String,
-    provider_location: ExecutionLocation,
+    providers: Vec<RuntimeProvider>,
+    route_objective: RouteObjective,
+    rate_limit: RateLimitState,
     receipt_dir: PathBuf,
 }
 
@@ -41,9 +103,8 @@ struct HealthResponse {
     status: &'static str,
     service: &'static str,
     mode: &'static str,
-    provider: String,
-    provider_location: &'static str,
-    default_model: String,
+    provider_count: usize,
+    routing_objective: &'static str,
 }
 
 #[derive(Serialize)]
@@ -130,6 +191,9 @@ struct ExecutionReceipt {
     raw_data_egress: EgressPolicy,
     usage: Option<TokenUsage>,
     acceptance: AcceptanceSummary,
+    route_objective: RouteObjective,
+    estimated_cost_microusd: Option<u64>,
+    provider_latency_ms: u64,
     note: String,
 }
 
@@ -152,11 +216,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let address = std::env::var("WX_BIND_ADDR").unwrap_or_else(|_| "127.0.0.1:8080".to_owned());
     let socket: SocketAddr = address.parse()?;
 
-    let api_key = std::env::var("WX_API_KEY")
-        .ok()
-        .filter(|value| !value.trim().is_empty())
-        .map(|value| value.trim().to_owned());
-
+    let api_key = read_secret("WX_API_KEY")?;
     if let Some(key) = &api_key {
         if key.len() < 32 {
             return Err("WX_API_KEY must contain at least 32 characters".into());
@@ -165,35 +225,42 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("WX_API_KEY is required when WX_BIND_ADDR is not loopback".into());
     }
 
-    let provider_location = parse_location(
-        &std::env::var("WX_UPSTREAM_LOCATION").unwrap_or_else(|_| "local".to_owned()),
+    let profiles = load_provider_profiles()?;
+    validate_catalog(&profiles)?;
+    let route_objective = RouteObjective::parse(
+        &std::env::var("WX_ROUTE_OBJECTIVE").unwrap_or_else(|_| "balanced".to_owned()),
     )?;
-    let upstream_base_url = std::env::var("WX_UPSTREAM_BASE_URL")
-        .unwrap_or_else(|_| "http://127.0.0.1:11434/v1".to_owned());
-    let upstream_model =
-        std::env::var("WX_UPSTREAM_MODEL").unwrap_or_else(|_| "llama3.2".to_owned());
-    if provider_location == ExecutionLocation::PublicCloud
-        && !upstream_base_url.starts_with("https://")
-    {
-        return Err("public-cloud provider endpoints must use HTTPS".into());
+    let mut providers = Vec::with_capacity(profiles.len());
+    for profile in profiles {
+        if profile.location == ExecutionLocation::PublicCloud
+            && !profile.base_url.starts_with("https://")
+        {
+            return Err(format!(
+                "public-cloud provider '{}' must use HTTPS",
+                profile.name
+            )
+            .into());
+        }
+        let upstream_api_key = match profile.api_key_env.as_deref() {
+            Some(name) => read_secret(name)?,
+            None => None,
+        };
+        let timeout = Duration::from_secs(profile.timeout_seconds.clamp(1, 300));
+        let client = ProviderClient::new(
+            &profile.base_url,
+            upstream_api_key,
+            profile.model.clone(),
+            timeout,
+        )?;
+        providers.push(RuntimeProvider { profile, client });
     }
-    let upstream_api_key = std::env::var("WX_UPSTREAM_API_KEY")
-        .ok()
-        .filter(|value| !value.trim().is_empty());
-    let provider_name =
-        std::env::var("WX_UPSTREAM_NAME").unwrap_or_else(|_| "openai-compatible".to_owned());
-    let timeout_seconds = std::env::var("WX_UPSTREAM_TIMEOUT_SECONDS")
-        .ok()
-        .and_then(|value| value.parse::<u64>().ok())
-        .unwrap_or(60)
-        .clamp(1, 300);
 
-    let provider = ProviderClient::new(
-        &upstream_base_url,
-        upstream_api_key,
-        upstream_model,
-        Duration::from_secs(timeout_seconds),
-    )?;
+    let requests_per_minute = std::env::var("WX_RATE_LIMIT_PER_MINUTE")
+        .unwrap_or_else(|_| "120".to_owned())
+        .parse::<u32>()?;
+    if requests_per_minute == 0 {
+        return Err("WX_RATE_LIMIT_PER_MINUTE must be greater than zero".into());
+    }
 
     let receipt_dir = std::env::var("WX_RECEIPT_DIR")
         .map(PathBuf::from)
@@ -201,14 +268,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let state = GatewayState {
         api_key: api_key.map(Arc::from),
-        provider,
-        provider_name,
-        provider_location,
+        providers,
+        route_objective,
+        rate_limit: RateLimitState::new(requests_per_minute),
         receipt_dir,
     };
 
     let listener = tokio::net::TcpListener::bind(socket).await?;
-    tracing::info!(%socket, "ROCKSOUL-WX gateway listening");
+    tracing::info!(
+        %socket,
+        provider_count = state.providers.len(),
+        routing_objective = state.route_objective.as_str(),
+        "ROCKSOUL-WX gateway listening"
+    );
     axum::serve(
         listener,
         app(state)
@@ -253,9 +325,8 @@ async fn health(State(state): State<GatewayState>) -> Json<HealthResponse> {
         status: "ok",
         service: "wx-gateway",
         mode: "workload-execution",
-        provider: state.provider_name,
-        provider_location: location_name(state.provider_location),
-        default_model: state.provider.default_model().to_owned(),
+        provider_count: state.providers.len(),
+        routing_objective: state.route_objective.as_str(),
     })
 }
 
@@ -305,7 +376,7 @@ async fn execute_workload(
         return Err(api_error(
             StatusCode::NOT_IMPLEMENTED,
             "budget_enforcement_unavailable",
-            "This release has no provider price meter; remove max_cost_microusd or wait for budget enforcement.",
+            "Provider cost estimates are recorded after execution, but hard pre-execution budget reservation is not implemented. Remove max_cost_microusd.",
         ));
     }
     let plan = wx_planner::plan(contract.clone()).map_err(|violations| {
@@ -323,46 +394,17 @@ async fn execute_workload(
         ));
     }
 
-    if !contract
-        .allowed_execution
-        .contains(&state.provider_location)
-    {
-        return Err(api_error(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "provider_location_not_allowed",
-            "The configured provider location is not present in the workload allow-list.",
-        ));
-    }
-    let plan_matches_provider = matches!(
-        (state.provider_location, plan.strategy),
-        (
-            ExecutionLocation::Local,
-            ExecutionStrategy::LocalOnly | ExecutionStrategy::LocalFirst
-        ) | (
-            ExecutionLocation::PrivateCloud,
-            ExecutionStrategy::PrivateCloudOnly
-        ) | (
-            ExecutionLocation::PublicCloud,
-            ExecutionStrategy::PublicCloudEligible
-        )
-    );
-    if !plan_matches_provider {
-        return Err(api_error(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "provider_not_selected_by_plan",
-            "The workload planner prefers a different execution location. Narrow the allow-list to the configured provider location.",
-        ));
-    }
-
+    let runtime = select_runtime_provider(&state, &contract, request.model.as_deref())?;
     let messages = [ChatMessage {
         role: "user".to_owned(),
         content: request.input,
     }];
 
+    let started = Instant::now();
     let completion_result = if let Some(deadline_ms) = contract.deadline_ms {
         tokio::time::timeout(
             Duration::from_millis(deadline_ms),
-            state.provider.complete(&messages, request.model.as_deref()),
+            runtime.client.complete(&messages, request.model.as_deref()),
         )
         .await
         .map_err(|_| {
@@ -373,22 +415,28 @@ async fn execute_workload(
             )
         })?
     } else {
-        state
-            .provider
+        runtime
+            .client
             .complete(&messages, request.model.as_deref())
             .await
     };
+    let provider_latency_ms = started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
     let completion = completion_result.map_err(provider_error)?;
 
     let acceptance = evaluate_acceptance(&contract.acceptance_criteria, &completion.content);
+    let estimated_cost_microusd =
+        estimate_cost_microusd(&runtime.profile, completion.usage.as_ref());
     let receipt = build_receipt(
         &state,
+        &runtime.profile,
         contract.id,
         contract.data_classification,
         contract.raw_data_egress,
         completion.model.clone(),
         completion.usage.clone(),
         acceptance.clone(),
+        estimated_cost_microusd,
+        provider_latency_ms,
     );
     persist_receipt(&state.receipt_dir, &receipt).await.map_err(|_| {
         api_error(
@@ -401,7 +449,7 @@ async fn execute_workload(
     Ok(Json(WorkloadExecutionResponse {
         workload_id: contract.id,
         plan,
-        provider: state.provider_name.clone(),
+        provider: runtime.profile.name.clone(),
         model: completion.model,
         output: completion.content,
         usage: completion.usage,
@@ -448,11 +496,27 @@ async fn openai_compatible_chat(
 
     let classification = parse_classification_header(&headers)?;
     let egress = parse_egress_header(&headers);
+    let mut allowed_execution = Vec::new();
+    for runtime in &state.providers {
+        let location = runtime.profile.location;
+        if location == ExecutionLocation::PublicCloud
+            && (egress != EgressPolicy::Allow
+                || matches!(
+                    classification,
+                    DataClassification::Confidential | DataClassification::Restricted
+                ))
+        {
+            continue;
+        }
+        if !allowed_execution.contains(&location) {
+            allowed_execution.push(location);
+        }
+    }
     let contract = WorkloadContract {
         objective: "OpenAI-compatible chat completion".to_owned(),
         data_classification: classification,
         raw_data_egress: egress,
-        allowed_execution: vec![state.provider_location],
+        allowed_execution,
         ..WorkloadContract::default()
     };
     wx_policy::validate(&contract).map_err(|violations| {
@@ -461,12 +525,17 @@ async fn openai_compatible_chat(
             Json(ApiError::with_violations(violations)),
         )
     })?;
+    let runtime = select_runtime_provider(&state, &contract, request.model.as_deref())?;
 
-    let completion = state
-        .provider
+    let started = Instant::now();
+    let completion = runtime
+        .client
         .complete(&request.messages, request.model.as_deref())
         .await
         .map_err(provider_error)?;
+    let provider_latency_ms = started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
+    let estimated_cost_microusd =
+        estimate_cost_microusd(&runtime.profile, completion.usage.as_ref());
 
     let acceptance = AcceptanceSummary {
         status: AcceptanceStatus::NotRequested,
@@ -475,12 +544,15 @@ async fn openai_compatible_chat(
     };
     let receipt = build_receipt(
         &state,
+        &runtime.profile,
         contract.id,
         contract.data_classification,
         contract.raw_data_egress,
         completion.model,
         completion.usage,
         acceptance,
+        estimated_cost_microusd,
+        provider_latency_ms,
     );
     persist_receipt(&state.receipt_dir, &receipt).await.map_err(|_| {
         api_error(
@@ -533,23 +605,32 @@ async fn get_receipt(
 }
 
 fn authorize(headers: &HeaderMap, state: &GatewayState) -> ApiResult<()> {
-    let Some(expected) = &state.api_key else {
-        return Ok(());
-    };
-
     let provided = headers
         .get(header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.strip_prefix("Bearer "))
         .unwrap_or_default();
 
-    if constant_time_eq(provided.as_bytes(), expected.as_bytes()) {
+    let principal = if let Some(expected) = &state.api_key {
+        if !constant_time_eq(provided.as_bytes(), expected.as_bytes()) {
+            return Err(api_error(
+                StatusCode::UNAUTHORIZED,
+                "unauthorized",
+                "A valid Bearer API key is required.",
+            ));
+        }
+        provided
+    } else {
+        "loopback-development"
+    };
+
+    if state.rate_limit.allow(principal) {
         Ok(())
     } else {
         Err(api_error(
-            StatusCode::UNAUTHORIZED,
-            "unauthorized",
-            "A valid Bearer API key is required.",
+            StatusCode::TOO_MANY_REQUESTS,
+            "rate_limit_exceeded",
+            "The request limit for this gateway credential has been reached; retry after the current 60-second window.",
         ))
     }
 }
@@ -572,6 +653,98 @@ fn parse_location(value: &str) -> Result<ExecutionLocation, &'static str> {
         "public_cloud" => Ok(ExecutionLocation::PublicCloud),
         _ => Err("WX_UPSTREAM_LOCATION must be local, private_cloud, or public_cloud"),
     }
+}
+
+fn load_provider_profiles() -> Result<Vec<ProviderProfile>, Box<dyn std::error::Error>> {
+    if let Ok(path) = std::env::var("WX_PROVIDER_CATALOG_FILE") {
+        let contents = std::fs::read_to_string(path)?;
+        return Ok(serde_json::from_str::<Vec<ProviderProfile>>(&contents)?);
+    }
+
+    let location = parse_location(
+        &std::env::var("WX_UPSTREAM_LOCATION").unwrap_or_else(|_| "local".to_owned()),
+    )?;
+    let base_url = std::env::var("WX_UPSTREAM_BASE_URL")
+        .unwrap_or_else(|_| "http://127.0.0.1:11434/v1".to_owned());
+    let model =
+        std::env::var("WX_UPSTREAM_MODEL").unwrap_or_else(|_| "llama3.2".to_owned());
+    let name =
+        std::env::var("WX_UPSTREAM_NAME").unwrap_or_else(|_| "ollama".to_owned());
+    let timeout_seconds = std::env::var("WX_UPSTREAM_TIMEOUT_SECONDS")
+        .unwrap_or_else(|_| "60".to_owned())
+        .parse::<u64>()?;
+
+    Ok(vec![ProviderProfile {
+        name,
+        base_url,
+        model,
+        location,
+        quality_score: 50,
+        p50_latency_ms: 1_000,
+        input_cost_microusd_per_1k_tokens: None,
+        output_cost_microusd_per_1k_tokens: None,
+        api_key_env: Some("WX_UPSTREAM_API_KEY".to_owned()),
+        timeout_seconds,
+        enabled: true,
+    }])
+}
+
+fn read_secret(name: &str) -> Result<Option<String>, std::io::Error> {
+    let file_variable = format!("{name}_FILE");
+    if let Ok(path) = std::env::var(file_variable) {
+        let value = std::fs::read_to_string(path)?;
+        let value = value.trim().to_owned();
+        return Ok((!value.is_empty()).then_some(value));
+    }
+    Ok(std::env::var(name)
+        .ok()
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty()))
+}
+
+fn select_runtime_provider<'a>(
+    state: &'a GatewayState,
+    contract: &WorkloadContract,
+    requested_model: Option<&str>,
+) -> ApiResult<&'a RuntimeProvider> {
+    if requested_model.is_some_and(|model| {
+        !state
+            .providers
+            .iter()
+            .any(|provider| provider.profile.model == model)
+    }) {
+        return Err(api_error(
+            StatusCode::BAD_REQUEST,
+            "model_not_allowed",
+            "The requested model is not present in the operator-configured provider catalog.",
+        ));
+    }
+
+    let candidates = state
+        .providers
+        .iter()
+        .filter(|provider| requested_model.is_none_or(|model| provider.profile.model == model))
+        .map(|provider| provider.profile.clone())
+        .collect::<Vec<_>>();
+    let selected = select_provider(contract, &candidates, state.route_objective).map_err(|_| {
+        api_error(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "no_eligible_provider",
+            "No configured provider satisfies this workload's execution-location and privacy constraints.",
+        )
+    })?;
+
+    state
+        .providers
+        .iter()
+        .find(|provider| provider.profile.name == selected.name)
+        .ok_or_else(|| {
+            api_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "provider_selection_invalid",
+                "The routing decision could not be matched to a configured provider runtime.",
+            )
+        })
 }
 
 fn location_name(location: ExecutionLocation) -> &'static str {
@@ -700,12 +873,15 @@ fn evaluate_acceptance(criteria: &[String], output: &str) -> AcceptanceSummary {
 
 fn build_receipt(
     state: &GatewayState,
+    profile: &ProviderProfile,
     workload_id: Uuid,
     classification: DataClassification,
     egress: EgressPolicy,
     model: String,
     usage: Option<TokenUsage>,
     acceptance: AcceptanceSummary,
+    estimated_cost_microusd: Option<u64>,
+    provider_latency_ms: u64,
 ) -> ExecutionReceipt {
     let created_at_unix_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -716,14 +892,17 @@ fn build_receipt(
         id: Uuid::new_v4(),
         workload_id,
         created_at_unix_ms,
-        provider: state.provider_name.clone(),
+        provider: profile.name.clone(),
         model,
-        execution_location: state.provider_location,
+        execution_location: profile.location,
         data_classification: classification,
         raw_data_egress: egress,
         usage,
         acceptance,
-        note: "Receipt records execution metadata and named checks; it does not prove semantic correctness.".to_owned(),
+        route_objective: state.route_objective,
+        estimated_cost_microusd,
+        provider_latency_ms,
+        note: "Receipt records execution metadata, operator-supplied price estimates, and named checks; it does not prove semantic correctness or final provider billing.".to_owned(),
     }
 }
 
@@ -804,9 +983,24 @@ mod tests {
     ) -> GatewayState {
         GatewayState {
             api_key: api_key.map(Arc::from),
-            provider,
-            provider_name: "test-provider".to_owned(),
-            provider_location: ExecutionLocation::Local,
+            providers: vec![RuntimeProvider {
+                profile: ProviderProfile {
+                    name: "test-provider".to_owned(),
+                    base_url: "http://127.0.0.1:11434/v1".to_owned(),
+                    model: "mock-model".to_owned(),
+                    location: ExecutionLocation::Local,
+                    quality_score: 50,
+                    p50_latency_ms: 100,
+                    input_cost_microusd_per_1k_tokens: Some(100),
+                    output_cost_microusd_per_1k_tokens: Some(100),
+                    api_key_env: None,
+                    timeout_seconds: 5,
+                    enabled: true,
+                },
+                client: provider,
+            }],
+            route_objective: RouteObjective::Balanced,
+            rate_limit: RateLimitState::new(1_000),
             receipt_dir,
         }
     }
@@ -924,7 +1118,7 @@ mod tests {
         let (upstream_url, upstream_task) = mock_provider().await;
         let receipt_dir = test_receipt_dir();
         let mut state = test_state(test_provider(&upstream_url), receipt_dir.clone(), None);
-        state.provider_location = ExecutionLocation::PublicCloud;
+        state.providers[0].profile.location = ExecutionLocation::PublicCloud;
         let payload = json!({
             "contract": {
                 "objective": "Review a confidential file",
