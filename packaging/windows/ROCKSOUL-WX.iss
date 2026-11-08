@@ -1,7 +1,7 @@
 #define AppName "ROCKSOUL-WX"
 #define AppPublisher "BRIDGE-ALLAH"
 #ifndef AppVersion
-  #error "AppVersion must be supplied, for example /DAppVersion=0.2.0"
+  #error "AppVersion must be supplied, for example /DAppVersion=<version>"
 #endif
 
 [Setup]
