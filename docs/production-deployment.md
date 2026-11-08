@@ -9,9 +9,9 @@ This release path targets a **single-operator / single-trust-domain deployment**
 - Inbound TCP ports 80 and 443 (and optionally UDP 443) allowed to the host.
 - A hosted Command Deck frontend. This repository's production Compose stack publishes the API, not the frontend.
 - An operator-controlled OpenAI-compatible inference endpoint reachable from the gateway container.
-- A provider account and API key, where applicable.
+- A provider account and API key, where applicable. Non-local provider URLs (private and public cloud) must use HTTPS.
 
-Do not expose port 8080 directly. Caddy is the only service with published host ports and terminates HTTPS automatically.
+Do not expose port 8080 directly. Caddy is the only service with published host ports and terminates HTTPS automatically. The gateway is not host-published; it shares an application bridge with Caddy and has outbound connectivity for configured provider calls.
 
 ## 2. Prepare secrets
 
@@ -23,11 +23,14 @@ umask 077
 openssl rand -hex 32 > secrets/gateway_api_key
 : > secrets/primary_provider_api_key
 chmod 600 secrets/gateway_api_key secrets/primary_provider_api_key
+# The gateway container runs as uid/gid 10001; allow only that identity to read.
+sudo chown 10001:10001 secrets/gateway_api_key secrets/primary_provider_api_key
+sudo chmod 0400 secrets/gateway_api_key secrets/primary_provider_api_key
 ```
 
 Place the real provider key into `secrets/primary_provider_api_key` using your secret-delivery process. Do not commit secret files or paste credentials into issues, chat, or source files.
 
-The gateway reads `WX_API_KEY_FILE` and provider `*_FILE` environment variables at process startup. Secret rotation requires updating the file and recreating the gateway container.
+The gateway reads `WX_API_KEY_FILE` and provider `*_FILE` environment variables at process startup. Compose file-source secrets are read-only host-file mounts, so the files must be readable by container uid/gid 10001; the commands above set this explicitly. Secret rotation requires updating the file and recreating the gateway container.
 
 ## 3. Configure providers
 
