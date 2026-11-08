@@ -31,6 +31,42 @@ jobs:
       - name: Check Dioxus web target
         run: cargo check -p wx-command-deck --target wasm32-unknown-unknown
 
+  windows:
+    runs-on: windows-latest
+    env:
+      RUSTFLAGS: -C target-feature=+crt-static
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test gateway on Windows
+        run: cargo test -p wx-gateway
+      - name: Build native Windows gateway
+        run: cargo build --release -p wx-gateway
+      - name: Validate PowerShell scripts
+        shell: pwsh
+        run: |
+          Get-ChildItem packaging/windows/*.ps1 | ForEach-Object {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Error $_.Message }
+              throw "PowerShell parse failed: $($_.Name)"
+            }
+          }
+      - name: Install Inno Setup
+        shell: powershell
+        run: choco install innosetup --yes --no-progress
+      - name: Compile Windows installer
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "dist/windows" | Out-Null
+          & "C:/Program Files (x86)/Inno Setup 6/ISCC.exe" "/DAppVersion=0.2.0" "packaging/windows/ROCKSOUL-WX.iss"
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed with exit code $LASTEXITCODE" }
+          if (-not (Test-Path "dist/windows/ROCKSOUL-WX-Setup-0.2.0.exe")) {
+            throw "Expected Windows installer output was not produced."
+          }
+
   container:
     runs-on: ubuntu-latest
     steps:

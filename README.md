@@ -9,7 +9,7 @@ This phase advances the original vertical slice into a **policy-first provider r
 ## What works today
 
 - Typed workload contracts, deterministic privacy/egress policy, execution planning, OpenAI-compatible provider adapters, and an Axum gateway.
-- A provider router that ranks an operator-configured catalog by balanced, quality, cost, or latency objective after filtering candidates by workload policy and allowed locations.
+- A provider router that ranks an operator-configured catalog by balanced, quality, cost, or latency objective after filtering candidates by workload policy.
 - Local-first and private-cloud-first strategies, with fallback only to locations explicitly allowed by the workload contract.
 - POST /v1/workloads/plan validates and plans without calling a model.
 - POST /v1/workloads/execute selects an eligible configured provider, executes the workload, runs named deterministic acceptance checks, and persists a metadata receipt.
@@ -17,26 +17,39 @@ This phase advances the original vertical slice into a **policy-first provider r
 - GET /v1/receipts/{id} retrieves persisted execution metadata.
 - Bearer-key authentication, constant-time key comparison, configurable in-process per-key rate limiting, CORS allow-list, request-size limits, provider timeouts, and mounted secret-file loading.
 - Dioxus Command Deck connected to workload execution.
-- Local Ollama Compose, CI, multi-architecture tagged image release workflow with SBOM/provenance, and a Caddy HTTPS deployment template.
+- Linux Docker Compose, CI, multi-architecture tagged image release workflow with SBOM/provenance, and a Caddy HTTPS deployment template.
 
 ## Quick start: local development
 
-```bash
+~~~bash
 cp .env.example .env
 python3 -c 'import secrets; print(secrets.token_hex(32))'
-```
+~~~
 
 Put the generated value (64 hex characters) in WX_API_KEY in .env, then:
 
-```bash
+~~~bash
 docker compose up --build -d
 docker compose exec ollama ollama pull llama3.2
 dx serve --package wx-command-deck --platform web --port 8081
-```
+~~~
 
 Open the Dioxus local URL. The Command Deck connects to http://127.0.0.1:8080; enter the gateway API key when prompted. Local Compose binds gateway and Ollama ports to loopback.
 
 See the [Development Guide](docs/development.md) and [API Reference](docs/api-reference.md).
+
+## Windows installer
+
+Each tagged release builds an x64 ROCKSOUL-WX-Setup-<version>.exe installer and a SHA-256 checksum. The installer packages the native Rust gateway and local PowerShell start/test helpers. It is a gateway test package, **not a native desktop GUI**.
+
+1. Download the installer and matching checksum from [GitHub Releases](https://github.com/BRIDGE-ALLAH/ROCKSOUL-WX/releases).
+2. Verify its SHA-256 checksum before running it.
+3. Install and launch **Start Local Gateway** from the Start Menu.
+4. Run **Verify Local Gateway** to test the health and authenticated planning endpoints.
+
+The Windows package binds only to 127.0.0.1:8080, generates a per-user API key, and stores receipt metadata under %LOCALAPPDATA%\ROCKSOUL-WX. For actual model execution, install and run Ollama separately and pull llama3.2. See the [Windows testing guide](packaging/windows/WINDOWS-README.md).
+
+The installer is currently unsigned because no Authenticode signing certificate is configured; Windows SmartScreen may show an unknown-publisher warning.
 
 ## Provider routing
 
@@ -59,7 +72,7 @@ See [provider catalog template](config/providers.production.example.json).
 
 ## Architecture
 
-```text
+~~~text
 Browser / OpenAI SDK
         |
         v
@@ -80,7 +93,7 @@ Browser / OpenAI SDK
     Metadata receipt
         |
  Dioxus Command Deck
-```
+~~~
 
 | Crate | Responsibility |
 |---|---|
@@ -120,11 +133,13 @@ Do not expose gateway port 8080 directly. Use the production TLS proxy, restrict
 
 ## CI
 
-```bash
+~~~bash
 cargo fmt --all -- --check
 cargo test --workspace --exclude wx-command-deck
 cargo check -p wx-command-deck --target wasm32-unknown-unknown
-```
+cargo test -p wx-gateway # Windows runner
+cargo build --release -p wx-gateway # Windows runner
+~~~
 
 Provider adapter tests use local mock servers. CI does not use live provider credentials or incur provider charges.
 
