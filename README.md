@@ -2,122 +2,115 @@
 
 > **Don't route prompts. Route outcomes.**
 
-ROCKSOUL-WX is an outcome-driven intelligence fabric: a Rust-first runtime for compiling requests into governed workloads, choosing appropriate execution paths, and recording verifiable evidence about how work was completed.
+ROCKSOUL-WX is a Rust-first, outcome-driven AI gateway foundation. It treats each request as a governed workload with an objective, data classification, permitted execution location, acceptance criteria, and operational constraints.
 
-The project deliberately starts smaller than its long-term vision. The first milestone is a safe, inspectable foundation—not an autonomous system that silently changes production policy.
+The product thesis is to evolve from model routing into a workload execution fabric. The current MVP deliberately proves a narrow vertical slice before attempting autonomous multi-provider allocation.
 
-## Product thesis
+## What works today
 
-Most AI gateways optimize the path from a prompt to a model. ROCKSOUL-WX optimizes the path from an objective to an acceptable outcome.
+- Rust workspace with typed workload contracts, deterministic policy checks, a planner, an OpenAI-compatible provider adapter, and an Axum gateway.
+- Dioxus Command Deck connected to the workload execution API.
+- `POST /v1/workloads/plan` validates and plans without calling a model.
+- `POST /v1/workloads/execute` applies policy, calls the configured provider, evaluates supported checks, and persists a receipt.
+- `POST /v1/chat/completions` provides a text-only, non-streaming OpenAI-compatible route.
+- `GET /v1/receipts/{id}` retrieves a persisted metadata receipt.
+- Bearer API key support, loopback-only unauthenticated development mode, explicit CORS origins, request body limits, provider timeouts, and policy enforcement.
+- A local Ollama Compose stack and CI for Rust tests plus Dioxus WebAssembly compilation.
 
-A workload is described by an explicit contract:
+## Quick start with Docker Compose
 
-- **Objective** — what needs to be accomplished.
-- **Constraints** — budget and deadline boundaries.
-- **Privacy** — data classification and permitted execution locations.
-- **Acceptance criteria** — checks required before an outcome can be called verified.
-- **Action policy** — whether external or irreversible actions need approval.
+```bash
+cp .env.example .env
+python3 -c 'import secrets; print(secrets.token_hex(32))'
+```
 
-The runtime may eventually choose deterministic software, local models, cloud models, tools, or human review. It must never treat a model's self-reported confidence as proof of correctness.
+Put the generated value (64 hex characters) into `WX_API_KEY` in `.env`, then:
 
-## Architectural pillars
+```bash
+docker compose up --build -d
+docker compose exec ollama ollama pull llama3.2
+dx serve --package wx-command-deck --platform web --port 8081
+```
 
-1. **Intelligence Compiler** — normalize intent into a typed workload contract and execution plan.
-2. **Sovereign Execution** — enforce privacy, budget, deadline, and action constraints outside the model.
-3. **Verifiable Intelligence** — attach provenance, validation results, and an execution receipt to completed work.
+Open the Dioxus local URL. The Command Deck connects to `http://127.0.0.1:8080`; use the gateway API key from `.env` when prompted. Compose binds gateway and Ollama ports to loopback only.
 
-## Initial implementation
+For host-based development, see [Development Guide](docs/development.md). For endpoints and JSON shapes, see [API Reference](docs/api-reference.md).
 
-The initial repository foundation provides:
-
-- A Rust workspace with separate contract, policy, planner, and gateway crates.
-- A Dioxus-based Command Deck application scaffold.
-- A workload planning API that does not call an external model.
-- Conservative policy checks for sensitive data and public-cloud egress.
-- An RFC describing the architecture, threat boundaries, and incremental roadmap.
-
-**Important:** the first release is a planning foundation. It does not yet execute LLM requests, provide cryptographic proof of truth, or guarantee that a workload result is correct.
-
-## Repository layout
+## Architecture
 
 ```text
-apps/
-  wx-gateway/       HTTP API and runtime entry point
-  wx-command-deck/  Dioxus operator interface
-crates/
-  wx-contract/      Typed workload contracts and plans
-  wx-policy/        Deterministic policy validation
-  wx-planner/       Initial execution-strategy planner
-docs/
-  RFC-001-outcome-driven-intelligence-fabric.md
-  workload-contract.md
-  threat-model.md
+Browser / OpenAI SDK
+        |
+        v
+  Rust + Axum Gateway
+        |
+   Workload Contract
+        |
+  Deterministic Policy
+        |
+   Execution Planner
+        |
+  Configured Provider
+ (Ollama / OpenAI-compatible)
+        |
+   Acceptance Checks
+        |
+   Execution Receipt
+        |
+  Dioxus Command Deck
 ```
 
-## Product experiments and research agenda
+Key crates:
 
-The differentiators are hypotheses to validate, not claims of prior-art uniqueness or achieved performance:
+| Crate | Responsibility |
+|---|---|
+| `wx-contract` | Typed workload contracts, execution plans, and policy metadata |
+| `wx-policy` | Deterministic, fail-closed privacy and egress checks |
+| `wx-planner` | Provider-neutral strategy selection |
+| `wx-provider` | Operator-configured OpenAI-compatible HTTP client |
+| `wx-gateway` | Authentication, API, execution, CORS, and receipt persistence |
 
-- [Workload Compiler](docs/RFC-001-outcome-driven-intelligence-fabric.md#workload-compiler): compile objectives into typed, governed work plans.
-- [Dissent-to-Intervention](docs/research-agenda.md#2-dissent-to-intervention-engine): use disagreement to select retrieval, deterministic checks, clarification, or human review.
-- [Data Sovereignty](docs/research-agenda.md#3-data-sovereignty-compiler): keep data labels attached across tools, context, caches, logs, and egress.
-- [Proof-Carrying Receipts](docs/research-agenda.md#4-proof-carrying-execution-receipts): record execution provenance and named checks without claiming universal proof of truth.
-- [Verified Semantic Cache](docs/research-agenda.md#5-verified-semantic-cache): evaluate false-hit risk before optimizing cache reuse.
-- [Temporal Scheduling](docs/research-agenda.md#6-temporal-and-carbon-aware-scheduling): schedule only deferrable work against measured cost, latency, and energy signals.
+## Product thesis and research agenda
 
-See [research agenda](docs/research-agenda.md) for falsifiable hypotheses, evaluation metrics, and research governance.
+The differentiators remain hypotheses to test, not claims of prior-art uniqueness or achieved performance:
 
-## Development
+- **Workload Compiler** — compile objectives into constrained execution graphs.
+- **Dissent-to-Intervention** — use worker disagreement to select targeted verification or human review.
+- **Data Sovereignty Compiler** — preserve data labels through tools, caches, logs, and egress.
+- **Proof-Carrying Receipts** — record provenance and named checks without claiming universal proof of truth.
+- **Verified Semantic Cache** — measure false-hit risk before optimizing reuse.
+- **Temporal Scheduling** — schedule deferrable workloads against measured cost, latency, and energy signals.
 
-Prerequisites: stable Rust (edition 2024), Cargo, and the Dioxus CLI for the web UI.
+See [RFC-001](docs/RFC-001-outcome-driven-intelligence-fabric.md) and the [Research Agenda](docs/research-agenda.md).
 
-Run the gateway:
+## Security and current limits
+
+- Provider URLs, model, and provider credentials are server-side configuration; browser input cannot redirect the gateway to an arbitrary URL.
+- Unspecified workload classification defaults to **internal**. Raw-data egress defaults to **denied**.
+- Confidential/restricted workloads cannot execute through a public-cloud provider.
+- Remote gateway binds require `WX_API_KEY` with at least 32 characters. For public-cloud provider endpoints, HTTPS is mandatory.
+- Provider selection is currently a single configured adapter, not an adaptive multi-provider router.
+- Streaming is not supported.
+- Budgets with `max_cost_microusd` are rejected until token pricing and budget enforcement exist.
+- `require_human_approval=true` is blocked until an approval workflow exists.
+- A passed acceptance result means only that supported deterministic checks passed; it is not proof of semantic correctness.
+- Receipts are local JSON metadata files, not a tamper-evident distributed ledger.
+- Multi-tenant auth/isolation, rate limiting, production secret management, and a full Action Escrow runtime are future work.
+
+Do not expose the current gateway directly to the public internet. Put it behind a TLS reverse proxy and add the missing production controls before shared or multi-tenant deployment.
+
+## CI
+
+GitHub Actions checks:
 
 ```bash
-cargo run -p wx-gateway
+cargo fmt --all -- --check
+cargo test --workspace --exclude wx-command-deck
+cargo check -p wx-command-deck --target wasm32-unknown-unknown
 ```
 
-The gateway listens on `127.0.0.1:8080` by default.
-
-Check its health:
-
-```bash
-curl http://127.0.0.1:8080/healthz
-```
-
-Plan a workload (planning only; no model provider is called):
-
-```bash
-curl -X POST http://127.0.0.1:8080/v1/workloads/plan \
-  -H 'content-type: application/json' \
-  -d '{
-    "objective": "Summarize the public product changelog",
-    "data_classification": "public",
-    "raw_data_egress": "allow",
-    "allowed_execution": ["local", "public_cloud"],
-    "acceptance_criteria": ["output is non-empty"]
-  }'
-```
-
-Run the Dioxus web app:
-
-```bash
-dx serve --package wx-command-deck --platform web
-```
-
-## Design principles
-
-- **Policy beats prompt instructions.** Enforcement belongs in deterministic code at system boundaries.
-- **No-LLM is a first-class route.** Use deterministic tools where they can satisfy the contract.
-- **Fail closed for sensitive data.** Unclear privacy policy must not silently authorize public egress.
-- **Verification is scoped.** A receipt records which checks ran; it is not a universal proof of truth.
-- **No silent self-modification.** Learned routing policies require offline evaluation and explicit promotion.
-- **Start as a modular monolith.** Split services only when operational evidence justifies it.
-
-## Status
-
-Early architecture and implementation scaffold. APIs and schemas are expected to evolve before a stable release. See [RFC-001](docs/RFC-001-outcome-driven-intelligence-fabric.md), the [workload contract](docs/workload-contract.md), the [threat model](docs/threat-model.md), and the [development guide](docs/development.md).
+The core suite includes an in-process mock OpenAI-compatible provider; no real provider credential is needed for CI.
 
 ## License
 
-No license has been selected yet. Until a license is added, standard copyright restrictions apply.
+No license has been selected yet. Until one is added, standard copyright restrictions apply.
