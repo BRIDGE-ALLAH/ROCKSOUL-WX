@@ -2,8 +2,13 @@
 .env
 .env.*
 !.env.example
+!.env.production.example
+secrets
+config/providers.production.json
 target
 dist
 build
 data
+*.pem
+*.key
 *.log
