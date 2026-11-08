@@ -10,6 +10,7 @@ fn App() -> Element {
     let mut api_key = use_signal(String::new);
     let mut objective = use_signal(String::new);
     let mut classification = use_signal(|| "public".to_owned());
+    let mut execution_location = use_signal(|| "local".to_owned());
     let mut allow_egress = use_signal(|| false);
     let mut busy = use_signal(|| false);
     let mut result = use_signal(|| None::<String>);
@@ -110,6 +111,15 @@ fn App() -> Element {
                             option { value: "confidential", "Confidential" }
                             option { value: "restricted", "Restricted" }
                         }
+                        label { "EXECUTION LOCATION" }
+                        select {
+                            class: "text-input",
+                            value: "{execution_location}",
+                            onchange: move |event| execution_location.set(event.value()),
+                            option { value: "local", "Local (Ollama / LM Studio)" }
+                            option { value: "private_cloud", "Private cloud" }
+                            option { value: "public_cloud", "Public cloud" }
+                        }
                         label { "WORKLOAD OBJECTIVE / INPUT" }
                         textarea {
                             value: "{objective}",
@@ -138,6 +148,7 @@ fn App() -> Element {
                                     let secret = api_key();
                                     let input = objective();
                                     let data_classification = classification();
+                                    let selected_location = execution_location();
                                     let egress = allow_egress();
                                     let mut busy_signal = busy;
                                     let mut result_signal = result;
@@ -148,11 +159,7 @@ fn App() -> Element {
                                         result_signal.set(None);
                                         error_signal.set(None);
 
-                                        let allowed_execution = match data_classification.as_str() {
-                                            "confidential" | "restricted" => vec!["local"],
-                                            _ if egress => vec!["local", "private_cloud", "public_cloud"],
-                                            _ => vec!["local", "private_cloud"],
-                                        };
+                                        let allowed_execution = vec![selected_location.as_str()];
                                         let payload = serde_json::json!({
                                             "contract": {
                                                 "objective": input,
