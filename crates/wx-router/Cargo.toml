@@ -1,0 +1,15 @@
+[package]
+name = "wx-router"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde.workspace = true
+thiserror.workspace = true
+wx-contract = { path = "../wx-contract" }
+wx-policy = { path = "../wx-policy" }
+wx-provider = { path = "../wx-provider" }
+
+[dev-dependencies]
+serde_json.workspace = true
