@@ -1,6 +1,7 @@
 //! Conservative, deterministic workload planning.
 //!
-//! This module creates plans only. It does not invoke model providers or execute tools.
+//! This module returns deterministic execution strategies. The gateway applies these
+//! strategies before invoking a configured provider.
 
 use wx_contract::{
     ExecutionLocation, ExecutionPlan, ExecutionStrategy, PlanStatus, PlanStep, PlanStepKind,
@@ -59,7 +60,7 @@ pub fn plan(contract: WorkloadContract) -> Result<ExecutionPlan, Vec<PolicyViola
         ],
         ExecutionStrategy::PublicCloudEligible => vec![
             "Public-cloud execution is explicitly allowed and raw-data egress is permitted.".to_owned(),
-            "Provider selection and actual execution are outside this planning milestone.".to_owned(),
+            "The configured provider router may select public cloud only because this is the sole explicitly allowed location.".to_owned(),
         ],
     };
 
