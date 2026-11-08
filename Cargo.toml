@@ -7,6 +7,7 @@ members = [
     "crates/wx-policy",
     "crates/wx-planner",
     "crates/wx-provider",
+    "crates/wx-router",
 ]
 default-members = [
     "apps/wx-gateway",
