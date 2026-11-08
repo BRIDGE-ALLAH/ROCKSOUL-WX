@@ -20,3 +20,13 @@ jobs:
         run: cargo fmt --all -- --check
       - name: Test core crates and gateway
         run: cargo test --workspace --exclude wx-command-deck
+
+  command-deck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Check Dioxus web target
+        run: cargo check -p wx-command-deck --target wasm32-unknown-unknown
