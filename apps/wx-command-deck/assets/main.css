@@ -73,3 +73,68 @@ textarea:focus { border-color: rgba(103,232,220,.5); }
 footer { color: #56656e; text-align: right; margin-top: 24px; font-size: 8px; }
 @media (max-width: 950px) { .sidebar { width: 205px; } .main-content { padding: 25px 22px; } .hero { padding: 30px; } .hero-orbit { margin-right: 10px; transform: scale(.8); } .content-grid { grid-template-columns: 1fr; } }
 @media (max-width: 700px) { .sidebar { display: none; } .main-content { padding: 20px 14px; } .hero { min-height: 0; padding: 25px 20px; } .hero-orbit { display: none; } .metrics-grid { grid-template-columns: repeat(2,1fr); } .topbar { align-items: flex-start; } }
+
+
+.text-input {
+  width: 100%;
+  min-height: 40px;
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  color: var(--text);
+  background: #0a1015;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  outline: none;
+  font: 11px "DM Mono", monospace;
+}
+.text-input:focus { border-color: rgba(103,232,220,.5); }
+.checkbox-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: #91a1aa;
+  font: 10px "Manrope", system-ui, sans-serif;
+  letter-spacing: 0;
+  line-height: 1.6;
+  margin: 4px 0 12px;
+}
+.checkbox-label input { accent-color: var(--cyan); margin-top: 2px; }
+.error-output {
+  margin-top: 15px;
+  padding: 12px;
+  border: 1px solid rgba(248,113,113,.28);
+  border-left: 2px solid #f87171;
+  border-radius: 5px;
+  background: rgba(127,29,29,.13);
+  color: #fecaca;
+  font: 10px "DM Mono", monospace;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.result-block {
+  margin-top: 18px;
+  padding: 15px;
+  border: 1px solid rgba(103,232,220,.2);
+  border-radius: 7px;
+  background: #090f13;
+}
+.result-block pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 480px;
+  overflow: auto;
+  color: #c7d7d9;
+  font: 10px/1.7 "DM Mono", monospace;
+}
+.execution-note {
+  margin-top: 20px;
+  padding: 13px;
+  border: 1px solid rgba(242,166,90,.18);
+  border-radius: 6px;
+  background: rgba(242,166,90,.04);
+  color: #c8b9a7;
+  font-size: 10px;
+  line-height: 1.7;
+}
+.execution-note strong { color: var(--amber); }
+.execution-note p { margin: 6px 0 0; }
