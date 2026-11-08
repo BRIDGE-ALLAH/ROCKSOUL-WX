@@ -231,14 +231,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     let mut providers = Vec::with_capacity(profiles.len());
     for profile in profiles {
-        if profile.location != ExecutionLocation::Local
-            && !profile.base_url.starts_with("https://")
-        {
-            return Err(format!(
-                "non-local provider '{}' must use HTTPS",
-                profile.name
-            )
-            .into());
+        if profile.location != ExecutionLocation::Local && !profile.base_url.starts_with("https://") {
+            return Err(format!("non-local provider '{}' must use HTTPS", profile.name).into());
         }
         let upstream_api_key = match profile.api_key_env.as_deref() {
             Some(name) => read_secret(name)?,
@@ -324,7 +318,11 @@ async fn health(State(state): State<GatewayState>) -> Json<HealthResponse> {
         status: "ok",
         service: "wx-gateway",
         mode: "workload-execution",
-        provider_count: state.providers.iter().filter(|provider| provider.profile.enabled).count(),
+        provider_count: state
+            .providers
+            .iter()
+            .filter(|provider| provider.profile.enabled)
+            .count(),
         routing_objective: state.route_objective.as_str(),
     })
 }
@@ -665,10 +663,8 @@ fn load_provider_profiles() -> Result<Vec<ProviderProfile>, Box<dyn std::error::
     )?;
     let base_url = std::env::var("WX_UPSTREAM_BASE_URL")
         .unwrap_or_else(|_| "http://127.0.0.1:11434/v1".to_owned());
-    let model =
-        std::env::var("WX_UPSTREAM_MODEL").unwrap_or_else(|_| "llama3.2".to_owned());
-    let name =
-        std::env::var("WX_UPSTREAM_NAME").unwrap_or_else(|_| "ollama".to_owned());
+    let model = std::env::var("WX_UPSTREAM_MODEL").unwrap_or_else(|_| "llama3.2".to_owned());
+    let name = std::env::var("WX_UPSTREAM_NAME").unwrap_or_else(|_| "ollama".to_owned());
     let timeout_seconds = std::env::var("WX_UPSTREAM_TIMEOUT_SECONDS")
         .unwrap_or_else(|_| "60".to_owned())
         .parse::<u64>()?;
