@@ -31,7 +31,9 @@ sudo chmod 0400 secrets/gateway_api_key secrets/receipt_hmac_key secrets/primary
 
 Place the real provider key into `secrets/primary_provider_api_key` using your secret-delivery process. Do not commit secret files or paste credentials into issues, chat, or source files.
 
-The gateway reads `WX_API_KEY_FILE`, `WX_RECEIPT_HMAC_KEY_FILE`, and provider `*_FILE` environment variables at process startup. The receipt HMAC key must be at least 32 characters and is required for non-loopback binds. Back it up separately and restrict access: loss of this key makes signed receipts unverifiable. Compose file-source secrets are read-only host-file mounts, so the files must be readable by container uid/gid 10001; the commands above set this explicitly. Secret rotation requires updating the file and recreating the gateway container.
+The gateway reads `WX_API_KEY_FILE`, `WX_RECEIPT_HMAC_KEY_FILE`, and provider `*_FILE` environment variables at process startup. The receipt HMAC key must be at least 32 characters and is required for non-loopback binds. Back it up separately and restrict access: loss of this key makes signed receipts unverifiable.
+
+**Receipt upgrade note:** v0.2.0 wrote unsigned receipt JSON. With the HMAC key enabled in v0.2.1+, old unsigned records fail closed on retrieval and are not automatically re-signed. Archive the old receipt volume before upgrading when historical access matters. Re-signing an unverified legacy file would not establish its prior integrity. Compose file-source secrets are read-only host-file mounts, so the files must be readable by container uid/gid 10001; the commands above set this explicitly. Secret rotation requires updating the file and recreating the gateway container.
 
 ## 3. Configure providers
 

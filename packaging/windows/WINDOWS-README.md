@@ -38,6 +38,10 @@ Restart the ROCKSOUL-WX gateway after Ollama is ready. Provider execution will f
 
 Stop the gateway with Ctrl+C in its console window. Uninstalling the application does not automatically remove user data or the local API key.
 
+## Upgrade note for existing receipt data
+
+The v0.2.0 installer stored unsigned JSON receipt files. When v0.2.1 or later starts with its receipt-integrity key enabled, those legacy unsigned files fail closed with an integrity-missing error and are not automatically converted into trusted signed records. Preserve the old `receipts` directory as an archive before upgrading if historical access matters; re-signing a legacy file would not establish its prior integrity. New receipts created after upgrade are HMAC-SHA-256 signed.
+
 ## Release integrity and signing
 
 Each release publishes a SHA-256 checksum next to the installer. The installer is currently NOT Authenticode-signed because no code-signing certificate has been configured for this repository. Windows SmartScreen may therefore display an unknown-publisher warning. Verify the checksum against the .sha256 file before running the installer.
