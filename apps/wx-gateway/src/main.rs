@@ -10,7 +10,7 @@ use serde_json::Value;
 use std::{
     collections::HashMap,
     collections::hash_map::RandomState,
-    hash::{Hash, Hasher},
+    hash::{BuildHasher, Hash, Hasher},
     net::SocketAddr,
     path::PathBuf,
     sync::{Arc, Mutex},
@@ -24,8 +24,7 @@ use tower_http::{
 use tracing_subscriber::EnvFilter;
 use uuid::Uuid;
 use wx_contract::{
-    DataClassification, EgressPolicy, ExecutionLocation, ExecutionPlan, ExecutionStrategy,
-    WorkloadContract,
+    DataClassification, EgressPolicy, ExecutionLocation, ExecutionPlan, WorkloadContract,
 };
 use wx_policy::PolicyViolation;
 use wx_provider::{ChatMessage, ProviderClient, ProviderError, TokenUsage};
