@@ -1,0 +1,9 @@
+[package]
+name = "wx-policy"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde.workspace = true
+wx-contract = { path = "../wx-contract" }
