@@ -118,7 +118,7 @@ Read the [Production Deployment Runbook](docs/production-deployment.md) before d
 
 - Workload classification defaults to **internal** and raw-data egress defaults to **denied**.
 - Confidential/restricted workloads are never eligible for public-cloud execution.
-- Remote binds require a gateway key of at least 32 characters. Public-cloud provider endpoints require HTTPS.
+- Remote binds require gateway and receipt-integrity keys of at least 32 characters. Public-cloud provider endpoints require HTTPS.
 - Rate limiting is an in-memory fixed 60-second window per shared gateway credential; it is not distributed or per-user/per-tenant.
 - This is a single-operator service, not a multi-tenant SaaS platform. Tenant identity, isolated credentials, and per-tenant authorization/quotas are not implemented.
 - Provider quality/latency/price data must be maintained by the operator. There is no automatic retry/failover after a provider execution error.
@@ -126,7 +126,7 @@ Read the [Production Deployment Runbook](docs/production-deployment.md) before d
 - require_human_approval=true is blocked until an approval workflow exists.
 - Streaming, multimodal inputs, and embeddings are not supported.
 - Acceptance results mean only that declared deterministic checks passed, not that an answer is semantically true.
-- Receipts are local JSON metadata files, not a tamper-evident distributed ledger.
+- Production receipt files are HMAC-SHA-256 authenticated using a separate operator key. This detects content alteration but not deletion/rollback and is not a tamper-evident distributed ledger; local loopback mode may use unsigned receipts.
 - The _FILE mechanism reads mounted secret files; it is not a managed secret vault or automated rotation service.
 
 Do not expose gateway port 8080 directly. Use the production TLS proxy, restrict network access, and complete the production gates in the runbook before multi-customer use.
