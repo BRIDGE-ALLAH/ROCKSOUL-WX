@@ -56,8 +56,8 @@ fn default_execution_locations() -> Vec<ExecutionLocation> {
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DataClassification {
-    #[default]
     Public,
+    #[default]
     Internal,
     Confidential,
     Restricted,
