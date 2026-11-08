@@ -1,13 +1,12 @@
 use axum::{
     Json, Router,
-    body::{Body, to_bytes},
     extract::{Path, State, rejection::JsonRejection},
     http::{HeaderMap, HeaderValue, Method, StatusCode, header},
     response::{IntoResponse, Response},
     routing::{get, post},
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::Value;
 use std::{
     net::SocketAddr,
     path::PathBuf,
@@ -22,7 +21,7 @@ use tower_http::{
 use tracing_subscriber::EnvFilter;
 use uuid::Uuid;
 use wx_contract::{
-    DataClassification, EgressPolicy, ExecutionLocation, ExecutionPlan, WorkloadContract,
+    DataClassification, EgressPolicy, ExecutionLocation, ExecutionPlan, ExecutionStrategy, WorkloadContract,
 };
 use wx_policy::PolicyViolation;
 use wx_provider::{ChatMessage, ProviderClient, ProviderError, TokenUsage};
@@ -321,6 +320,19 @@ async fn execute_workload(
             StatusCode::UNPROCESSABLE_ENTITY,
             "provider_location_not_allowed",
             "The configured provider location is not present in the workload allow-list.",
+        ));
+    }
+    let plan_matches_provider = matches!(
+        (state.provider_location, plan.strategy),
+        (ExecutionLocation::Local, ExecutionStrategy::LocalOnly | ExecutionStrategy::LocalFirst)
+            | (ExecutionLocation::PrivateCloud, ExecutionStrategy::PrivateCloudOnly)
+            | (ExecutionLocation::PublicCloud, ExecutionStrategy::PublicCloudEligible)
+    );
+    if !plan_matches_provider {
+        return Err(api_error(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "provider_not_selected_by_plan",
+            "The workload planner prefers a different execution location. Narrow the allow-list to the configured provider location.",
         ));
     }
 
@@ -721,9 +733,9 @@ fn api_error(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::{body::to_bytes, http::Request};
-    use std::net::TcpListener;
-    use tower::ServiceExt;
+    use axum::{body::{Body, to_bytes}, http::Request};
+    use serde_json::json;
+        use tower::ServiceExt;
 
     fn test_state(
         provider: ProviderClient,
