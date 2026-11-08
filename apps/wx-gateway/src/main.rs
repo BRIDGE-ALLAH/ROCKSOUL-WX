@@ -455,7 +455,13 @@ async fn execute_workload(
         estimated_cost_microusd,
         provider_latency_ms,
     );
-    persist_receipt(&state.receipt_dir, &receipt, state.receipt_hmac_key.as_deref()).await.map_err(|_| {
+    persist_receipt(
+        &state.receipt_dir,
+        &receipt,
+        state.receipt_hmac_key.as_deref(),
+    )
+    .await
+    .map_err(|_| {
         api_error(
             StatusCode::INTERNAL_SERVER_ERROR,
             "receipt_persistence_failed",
@@ -571,7 +577,13 @@ async fn openai_compatible_chat(
         estimated_cost_microusd,
         provider_latency_ms,
     );
-    persist_receipt(&state.receipt_dir, &receipt, state.receipt_hmac_key.as_deref()).await.map_err(|_| {
+    persist_receipt(
+        &state.receipt_dir,
+        &receipt,
+        state.receipt_hmac_key.as_deref(),
+    )
+    .await
+    .map_err(|_| {
         api_error(
             StatusCode::INTERNAL_SERVER_ERROR,
             "receipt_persistence_failed",
@@ -620,7 +632,10 @@ async fn get_receipt(
                     "The stored receipt could not be decoded.",
                 )
             })?;
-            match (state.receipt_hmac_key.as_deref(), stored.hmac_sha256.as_deref()) {
+            match (
+                state.receipt_hmac_key.as_deref(),
+                stored.hmac_sha256.as_deref(),
+            ) {
                 (Some(key), Some(signature)) => {
                     let expected = hmac_sha256_hex(key.as_bytes(), &payload);
                     if !constant_time_eq(expected.as_bytes(), signature.as_bytes()) {
@@ -986,8 +1001,7 @@ async fn persist_receipt(
 }
 
 fn hmac_sha256_hex(key: &[u8], payload: &[u8]) -> String {
-    let mut mac = Hmac::<Sha256>::new_from_slice(key)
-        .expect("HMAC accepts keys of any length");
+    let mut mac = Hmac::<Sha256>::new_from_slice(key).expect("HMAC accepts keys of any length");
     mac.update(payload);
     mac.finalize()
         .into_bytes()
@@ -1112,7 +1126,10 @@ mod tests {
         let signature = hmac_sha256_hex(key, b"receipt payload");
         assert_eq!(signature, hmac_sha256_hex(key, b"receipt payload"));
         assert_ne!(signature, hmac_sha256_hex(key, b"tampered payload"));
-        assert_ne!(signature, hmac_sha256_hex(b"different key with sufficient entropy", b"receipt payload"));
+        assert_ne!(
+            signature,
+            hmac_sha256_hex(b"different key with sufficient entropy", b"receipt payload")
+        );
     }
 
     #[test]
@@ -1250,7 +1267,9 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(verify_response.status(), StatusCode::INTERNAL_SERVER_ERROR);
-        let verify_body = to_bytes(verify_response.into_body(), usize::MAX).await.unwrap();
+        let verify_body = to_bytes(verify_response.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let verify_error: Value = serde_json::from_slice(&verify_body).unwrap();
         assert_eq!(verify_error["error"], "receipt_integrity_failed");
 
