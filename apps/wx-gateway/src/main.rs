@@ -21,7 +21,8 @@ use tower_http::{
 use tracing_subscriber::EnvFilter;
 use uuid::Uuid;
 use wx_contract::{
-    DataClassification, EgressPolicy, ExecutionLocation, ExecutionPlan, ExecutionStrategy, WorkloadContract,
+    DataClassification, EgressPolicy, ExecutionLocation, ExecutionPlan, ExecutionStrategy,
+    WorkloadContract,
 };
 use wx_policy::PolicyViolation;
 use wx_provider::{ChatMessage, ProviderClient, ProviderError, TokenUsage};
@@ -148,8 +149,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|_| EnvFilter::new("wx_gateway=info,tower_http=info"));
     tracing_subscriber::fmt().with_env_filter(filter).init();
 
-    let address = std::env::var("WX_BIND_ADDR")
-        .unwrap_or_else(|_| "127.0.0.1:8080".to_owned());
+    let address = std::env::var("WX_BIND_ADDR").unwrap_or_else(|_| "127.0.0.1:8080".to_owned());
     let socket: SocketAddr = address.parse()?;
 
     let api_key = std::env::var("WX_API_KEY")
@@ -260,17 +260,15 @@ async fn plan_workload(
     payload: Result<Json<WorkloadContract>, JsonRejection>,
 ) -> ApiResult<Json<ExecutionPlan>> {
     authorize(&headers, &state)?;
-    let Json(contract) = payload.map_err(|error| {
-        api_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_json",
-            error.body_text(),
-        )
-    })?;
+    let Json(contract) = payload
+        .map_err(|error| api_error(StatusCode::BAD_REQUEST, "invalid_json", error.body_text()))?;
 
-    wx_planner::plan(contract)
-        .map(Json)
-        .map_err(|violations| (StatusCode::UNPROCESSABLE_ENTITY, Json(ApiError::with_violations(violations))))
+    wx_planner::plan(contract).map(Json).map_err(|violations| {
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(ApiError::with_violations(violations)),
+        )
+    })
 }
 
 async fn execute_workload(
@@ -279,13 +277,8 @@ async fn execute_workload(
     payload: Result<Json<ExecuteWorkloadRequest>, JsonRejection>,
 ) -> ApiResult<Json<WorkloadExecutionResponse>> {
     authorize(&headers, &state)?;
-    let Json(request) = payload.map_err(|error| {
-        api_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_json",
-            error.body_text(),
-        )
-    })?;
+    let Json(request) = payload
+        .map_err(|error| api_error(StatusCode::BAD_REQUEST, "invalid_json", error.body_text()))?;
 
     if request.input.trim().is_empty() {
         return Err(api_error(
@@ -304,7 +297,10 @@ async fn execute_workload(
 
     let contract = request.contract;
     let plan = wx_planner::plan(contract.clone()).map_err(|violations| {
-        (StatusCode::UNPROCESSABLE_ENTITY, Json(ApiError::with_violations(violations)))
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(ApiError::with_violations(violations)),
+        )
     })?;
 
     if contract.require_human_approval {
@@ -315,7 +311,10 @@ async fn execute_workload(
         ));
     }
 
-    if !contract.allowed_execution.contains(&state.provider_location) {
+    if !contract
+        .allowed_execution
+        .contains(&state.provider_location)
+    {
         return Err(api_error(
             StatusCode::UNPROCESSABLE_ENTITY,
             "provider_location_not_allowed",
@@ -324,9 +323,16 @@ async fn execute_workload(
     }
     let plan_matches_provider = matches!(
         (state.provider_location, plan.strategy),
-        (ExecutionLocation::Local, ExecutionStrategy::LocalOnly | ExecutionStrategy::LocalFirst)
-            | (ExecutionLocation::PrivateCloud, ExecutionStrategy::PrivateCloudOnly)
-            | (ExecutionLocation::PublicCloud, ExecutionStrategy::PublicCloudEligible)
+        (
+            ExecutionLocation::Local,
+            ExecutionStrategy::LocalOnly | ExecutionStrategy::LocalFirst
+        ) | (
+            ExecutionLocation::PrivateCloud,
+            ExecutionStrategy::PrivateCloudOnly
+        ) | (
+            ExecutionLocation::PublicCloud,
+            ExecutionStrategy::PublicCloudEligible
+        )
     );
     if !plan_matches_provider {
         return Err(api_error(
@@ -383,13 +389,8 @@ async fn openai_compatible_chat(
     payload: Result<Json<OpenAiChatRequest>, JsonRejection>,
 ) -> ApiResult<Response> {
     authorize(&headers, &state)?;
-    let Json(request) = payload.map_err(|error| {
-        api_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_json",
-            error.body_text(),
-        )
-    })?;
+    let Json(request) = payload
+        .map_err(|error| api_error(StatusCode::BAD_REQUEST, "invalid_json", error.body_text()))?;
 
     if request.stream {
         return Err(api_error(
@@ -428,7 +429,10 @@ async fn openai_compatible_chat(
         ..WorkloadContract::default()
     };
     wx_policy::validate(&contract).map_err(|violations| {
-        (StatusCode::UNPROCESSABLE_ENTITY, Json(ApiError::with_violations(violations)))
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(ApiError::with_violations(violations)),
+        )
     })?;
 
     let completion = state
@@ -467,7 +471,14 @@ async fn openai_compatible_chat(
         )
     })?;
 
-    Ok(([(header::HeaderName::from_static("x-wx-receipt-id"), receipt_id)], Json(completion.provider_response)).into_response())
+    Ok((
+        [(
+            header::HeaderName::from_static("x-wx-receipt-id"),
+            receipt_id,
+        )],
+        Json(completion.provider_response),
+    )
+        .into_response())
 }
 
 async fn get_receipt(
@@ -478,10 +489,18 @@ async fn get_receipt(
     authorize(&headers, &state)?;
     let path = state.receipt_dir.join(format!("{id}.json"));
     let bytes = fs::read(path).await.map_err(|_| {
-        api_error(StatusCode::NOT_FOUND, "receipt_not_found", "No receipt exists for this identifier.")
+        api_error(
+            StatusCode::NOT_FOUND,
+            "receipt_not_found",
+            "No receipt exists for this identifier.",
+        )
     })?;
     let receipt = serde_json::from_slice::<ExecutionReceipt>(&bytes).map_err(|_| {
-        api_error(StatusCode::INTERNAL_SERVER_ERROR, "receipt_invalid", "The stored receipt could not be decoded.")
+        api_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "receipt_invalid",
+            "The stored receipt could not be decoded.",
+        )
     })?;
     Ok(Json(receipt))
 }
@@ -600,7 +619,8 @@ fn evaluate_acceptance(criteria: &[String], output: &str) -> AcceptanceSummary {
             CriterionResult {
                 criterion: criterion.clone(),
                 passed: Some(passed),
-                detail: "Checks for a case-insensitive substring in the generated output.".to_owned(),
+                detail: "Checks for a case-insensitive substring in the generated output."
+                    .to_owned(),
             }
         } else if let Some(minimum) = normalized.strip_prefix("min_length:") {
             match minimum.trim().parse::<usize>() {
@@ -610,7 +630,9 @@ fn evaluate_acceptance(criteria: &[String], output: &str) -> AcceptanceSummary {
                     CriterionResult {
                         criterion: criterion.clone(),
                         passed: Some(passed),
-                        detail: format!("Checks that output has at least {minimum} Unicode characters."),
+                        detail: format!(
+                            "Checks that output has at least {minimum} Unicode characters."
+                        ),
                     }
                 }
                 Err(_) => {
@@ -618,7 +640,8 @@ fn evaluate_acceptance(criteria: &[String], output: &str) -> AcceptanceSummary {
                     CriterionResult {
                         criterion: criterion.clone(),
                         passed: None,
-                        detail: "Unsupported criterion syntax; use min_length:<integer>.".to_owned(),
+                        detail: "Unsupported criterion syntax; use min_length:<integer>."
+                            .to_owned(),
                     }
                 }
             }
@@ -677,11 +700,13 @@ fn build_receipt(
     }
 }
 
-async fn persist_receipt(directory: &std::path::Path, receipt: &ExecutionReceipt) -> std::io::Result<()> {
+async fn persist_receipt(
+    directory: &std::path::Path,
+    receipt: &ExecutionReceipt,
+) -> std::io::Result<()> {
     fs::create_dir_all(directory).await?;
     let path = directory.join(format!("{}.json", receipt.id));
-    let bytes = serde_json::to_vec_pretty(receipt)
-        .map_err(std::io::Error::other)?;
+    let bytes = serde_json::to_vec_pretty(receipt).map_err(std::io::Error::other)?;
 
     let mut file = fs::OpenOptions::new()
         .create_new(true)
@@ -733,9 +758,12 @@ fn api_error(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::{body::{Body, to_bytes}, http::Request};
+    use axum::{
+        body::{Body, to_bytes},
+        http::Request,
+    };
     use serde_json::json;
-        use tower::ServiceExt;
+    use tower::ServiceExt;
 
     fn test_state(
         provider: ProviderClient,
@@ -752,13 +780,7 @@ mod tests {
     }
 
     fn test_provider(base_url: &str) -> ProviderClient {
-        ProviderClient::new(
-            base_url,
-            None,
-            "mock-model",
-            Duration::from_secs(5),
-        )
-        .unwrap()
+        ProviderClient::new(base_url, None, "mock-model", Duration::from_secs(5)).unwrap()
     }
 
     fn test_receipt_dir() -> PathBuf {
@@ -786,9 +808,18 @@ mod tests {
 
     #[tokio::test]
     async fn health_endpoint_is_available_without_api_key() {
-        let state = test_state(test_provider("http://127.0.0.1:11434/v1"), test_receipt_dir(), None);
+        let state = test_state(
+            test_provider("http://127.0.0.1:11434/v1"),
+            test_receipt_dir(),
+            None,
+        );
         let response = app(state)
-            .oneshot(Request::builder().uri("/healthz").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::builder()
+                    .uri("/healthz")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
@@ -919,7 +950,10 @@ mod tests {
     #[test]
     fn acceptance_checks_do_not_claim_semantic_truth() {
         let result = evaluate_acceptance(
-            &["non_empty_output".to_owned(), "domain_correctness".to_owned()],
+            &[
+                "non_empty_output".to_owned(),
+                "domain_correctness".to_owned(),
+            ],
             "Some output",
         );
         assert_eq!(result.status, AcceptanceStatus::NeedsDefinition);
