@@ -6,8 +6,11 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use thiserror::Error;
-use wx_contract::{DataClassification, EgressPolicy, ExecutionLocation, WorkloadContract};
+use wx_contract::{
+    DataClassification, EgressPolicy, ExecutionLocation, ExecutionStrategy, WorkloadContract,
+};
 use wx_policy::{PolicyViolation, validate};
+use wx_planner::plan;
 use wx_provider::TokenUsage;
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -135,11 +138,13 @@ pub fn select_provider<'a>(
         return Err(RouteError::NoEligibleProvider);
     }
 
+    let plan = plan(contract.clone()).map_err(RouteError::PolicyRejected)?;
     let mut eligible: Vec<&ProviderProfile> = profiles
         .iter()
         .filter(|profile| {
             profile.enabled
                 && contract.allowed_execution.contains(&profile.location)
+                && strategy_allows(plan.strategy, profile.location)
                 && location_is_permitted(contract, profile.location)
         })
         .collect();
@@ -197,6 +202,21 @@ pub fn select_provider<'a>(
     }
 
     eligible.first().copied().ok_or(RouteError::NoEligibleProvider)
+}
+
+fn strategy_allows(strategy: ExecutionStrategy, location: ExecutionLocation) -> bool {
+    match strategy {
+        ExecutionStrategy::HumanApprovalRequired => false,
+        ExecutionStrategy::LocalOnly => location == ExecutionLocation::Local,
+        ExecutionStrategy::LocalFirst => {
+            matches!(location, ExecutionLocation::Local | ExecutionLocation::PrivateCloud)
+        }
+        ExecutionStrategy::PrivateCloudOnly => location == ExecutionLocation::PrivateCloud,
+        ExecutionStrategy::PrivateCloudFirst => {
+            matches!(location, ExecutionLocation::PrivateCloud | ExecutionLocation::PublicCloud)
+        }
+        ExecutionStrategy::PublicCloudEligible => location == ExecutionLocation::PublicCloud,
+    }
 }
 
 fn location_is_permitted(contract: &WorkloadContract, location: ExecutionLocation) -> bool {
@@ -269,8 +289,9 @@ pub fn estimate_cost_microusd(
     let output_rate = profile.output_cost_microusd_per_1k_tokens?;
     let input_tokens = usage.prompt_tokens?;
     let output_tokens = usage.completion_tokens?;
-    let total = u128::from(input_tokens) * u128::from(input_rate)
-        + u128::from(output_tokens) * u128::from(output_rate);
+    let total = u128::from(input_tokens)
+        .saturating_mul(u128::from(input_rate))
+        .saturating_add(u128::from(output_tokens).saturating_mul(u128::from(output_rate)));
     let rounded_up = total.saturating_add(999) / 1_000;
     Some(rounded_up.min(u128::from(u64::MAX)) as u64)
 }
