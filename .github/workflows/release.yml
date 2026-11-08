@@ -4,6 +4,10 @@ on:
   push:
     tags:
       - "v*"
+  # The connected GitHub integration can create branches but cannot create
+  # Git tags/releases directly. This narrowly-scoped bootstrap branch lets
+  # this workflow create the annotated v0.2.0 release tag and publish assets.
+  create:
 
 permissions:
   contents: write
@@ -12,6 +16,7 @@ permissions:
 
 jobs:
   publish:
+    if: github.event_name == 'push' || (github.event_name == 'create' && github.event.ref_type == 'branch' && github.event.ref == 'release/v0.2.0')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -41,7 +46,8 @@ jobs:
           images: ghcr.io/bridge-allah/rocksoul-wx/gateway
           tags: |
             type=ref,event=tag
-            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
+            type=raw,value=latest,enable=${{ (github.event_name == 'push' && !contains(github.ref_name, '-')) || (github.event_name == 'create' && github.event.ref == 'release/v0.2.0') }}
+            type=raw,value=v0.2.0,enable=${{ github.event_name == 'create' && github.event.ref == 'release/v0.2.0' }}
 
       - name: Build and push multi-architecture image
         id: build
@@ -71,14 +77,22 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [[ "${GITHUB_REF_NAME}" == *-* ]]; then
-            gh release create "${GITHUB_REF_NAME}" --prerelease --generate-notes
+          if [[ "${GITHUB_EVENT_NAME}" == "create" ]]; then
+            release_tag="v0.2.0"
           else
-            gh release create "${GITHUB_REF_NAME}" --generate-notes
+            release_tag="${GITHUB_REF_NAME}"
+          fi
+          if ! gh release view "${release_tag}" >/dev/null 2>&1; then
+            if [[ "${release_tag}" == *-* ]]; then
+              gh release create "${release_tag}" --target "${GITHUB_SHA}" --prerelease --generate-notes
+            else
+              gh release create "${release_tag}" --target "${GITHUB_SHA}" --generate-notes
+            fi
           fi
 
   windows-installer:
     needs: publish
+    if: github.event_name == 'push' || (github.event_name == 'create' && github.event.ref_type == 'branch' && github.event.ref == 'release/v0.2.0')
     runs-on: windows-latest
     permissions:
       contents: write
@@ -101,7 +115,13 @@ jobs:
       - name: Build Windows installer
         shell: pwsh
         run: |
-          $version = $env:GITHUB_REF_NAME.Substring(1)
+          if ($env:GITHUB_EVENT_NAME -eq "create") {
+            $releaseTag = "v0.2.0"
+          } else {
+            $releaseTag = $env:GITHUB_REF_NAME
+          }
+          if (-not $releaseTag.StartsWith("v")) { throw "Release tag must start with v." }
+          $version = $releaseTag.Substring(1)
           New-Item -ItemType Directory -Force -Path "dist/windows" | Out-Null
           & "C:/Program Files (x86)/Inno Setup 6/ISCC.exe" "/DAppVersion=$version" "packaging/windows/ROCKSOUL-WX.iss"
           if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed with exit code $LASTEXITCODE" }
@@ -119,9 +139,14 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: pwsh
         run: |
+          if ($env:GITHUB_EVENT_NAME -eq "create") {
+            $releaseTag = "v0.2.0"
+          } else {
+            $releaseTag = $env:GITHUB_REF_NAME
+          }
           $installer = Get-ChildItem "dist/windows/ROCKSOUL-WX-Setup-*.exe" | Select-Object -First 1
           if (-not $installer) { throw "Windows installer was not produced." }
           $checksum = "$($installer.FullName).sha256"
           if (-not (Test-Path -LiteralPath $checksum)) { throw "Installer checksum was not produced." }
-          gh release upload $env:GITHUB_REF_NAME $installer.FullName $checksum --clobber
+          gh release upload $releaseTag $installer.FullName $checksum --clobber
           if ($LASTEXITCODE -ne 0) { throw "Could not attach the Windows installer to the GitHub Release." }

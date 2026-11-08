@@ -36,7 +36,7 @@ dx serve --package wx-command-deck --platform web --port 8081
 
 Open the Dioxus local URL. The Command Deck connects to http://127.0.0.1:8080; enter the gateway API key when prompted. Local Compose binds gateway and Ollama ports to loopback.
 
-See the [Development Guide](docs/development.md) and [API Reference](docs/api-reference.md).
+See the [Development Guide](docs/development.md), [API Reference](docs/api-reference.md), and [Project Roadmap](docs/roadmap.md).
 
 ## Windows installer
 
