@@ -76,7 +76,9 @@ fn choose_strategy(contract: &WorkloadContract) -> ExecutionStrategy {
         return ExecutionStrategy::HumanApprovalRequired;
     }
 
-    let allows_local = contract.allowed_execution.contains(&ExecutionLocation::Local);
+    let allows_local = contract
+        .allowed_execution
+        .contains(&ExecutionLocation::Local);
     let allows_private = contract
         .allowed_execution
         .contains(&ExecutionLocation::PrivateCloud);
