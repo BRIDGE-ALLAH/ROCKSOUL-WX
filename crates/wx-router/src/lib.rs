@@ -208,9 +208,7 @@ fn strategy_allows(strategy: ExecutionStrategy, location: ExecutionLocation) -> 
     match strategy {
         ExecutionStrategy::HumanApprovalRequired => false,
         ExecutionStrategy::LocalOnly => location == ExecutionLocation::Local,
-        ExecutionStrategy::LocalFirst => {
-            matches!(location, ExecutionLocation::Local | ExecutionLocation::PrivateCloud)
-        }
+        ExecutionStrategy::LocalFirst => true,
         ExecutionStrategy::PrivateCloudOnly => location == ExecutionLocation::PrivateCloud,
         ExecutionStrategy::PrivateCloudFirst => {
             matches!(location, ExecutionLocation::PrivateCloud | ExecutionLocation::PublicCloud)
