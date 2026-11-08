@@ -231,7 +231,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     let mut providers = Vec::with_capacity(profiles.len());
     for profile in profiles {
-        if profile.location != ExecutionLocation::Local && !profile.base_url.starts_with("https://") {
+        if profile.location != ExecutionLocation::Local && !profile.base_url.starts_with("https://")
+        {
             return Err(format!("non-local provider '{}' must use HTTPS", profile.name).into());
         }
         let upstream_api_key = match profile.api_key_env.as_deref() {
