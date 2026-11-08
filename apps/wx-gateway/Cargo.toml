@@ -13,3 +13,6 @@ tracing-subscriber.workspace = true
 wx-contract = { path = "../../crates/wx-contract" }
 wx-planner = { path = "../../crates/wx-planner" }
 wx-policy = { path = "../../crates/wx-policy" }
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
