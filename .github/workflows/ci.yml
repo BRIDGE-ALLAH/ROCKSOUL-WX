@@ -30,3 +30,12 @@ jobs:
           targets: wasm32-unknown-unknown
       - name: Check Dioxus web target
         run: cargo check -p wx-command-deck --target wasm32-unknown-unknown
+
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Compose configuration
+        run: WX_API_KEY=ci-only-placeholder-key-at-least-32-characters docker compose config --quiet
+      - name: Build gateway container
+        run: docker build --tag rocksoul-wx:ci .
