@@ -72,6 +72,14 @@ jobs:
             throw "Expected Windows installer output was not produced."
           }
 
+      - name: Install and smoke test Windows installer
+        shell: pwsh
+        run: |
+          $manifest = Get-Content "Cargo.toml" -Raw
+          if ($manifest -notmatch '(?s)\[workspace\.package\]\s+version\s*=\s*"([^"]+)"') { throw "Could not read workspace package version." }
+          $appVersion = $Matches[1]
+          & "packaging/windows/Smoke-Test-Installer.ps1" -InstallerPath "dist/windows/ROCKSOUL-WX-Setup-$appVersion.exe"
+
   container:
     runs-on: ubuntu-latest
     steps:
