@@ -85,6 +85,7 @@ pub enum ExecutionStrategy {
     HumanApprovalRequired,
     LocalOnly,
     LocalFirst,
+    PrivateCloudFirst,
     PrivateCloudOnly,
     PublicCloudEligible,
 }
