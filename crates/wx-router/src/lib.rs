@@ -9,8 +9,8 @@ use thiserror::Error;
 use wx_contract::{
     DataClassification, EgressPolicy, ExecutionLocation, ExecutionStrategy, WorkloadContract,
 };
-use wx_policy::{PolicyViolation, validate};
 use wx_planner::plan;
+use wx_policy::{PolicyViolation, validate};
 use wx_provider::TokenUsage;
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -36,10 +36,18 @@ pub struct ProviderProfile {
     pub enabled: bool,
 }
 
-fn default_quality() -> u8 { 50 }
-fn default_latency() -> u64 { 1_000 }
-fn default_timeout() -> u64 { 60 }
-fn default_enabled() -> bool { true }
+fn default_quality() -> u8 {
+    50
+}
+fn default_latency() -> u64 {
+    1_000
+}
+fn default_timeout() -> u64 {
+    60
+}
+fn default_enabled() -> bool {
+    true
+}
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -84,11 +92,15 @@ pub enum RouteError {
 
 pub fn validate_catalog(profiles: &[ProviderProfile]) -> Result<(), RouteError> {
     if profiles.is_empty() {
-        return Err(RouteError::InvalidCatalog("at least one provider is required".into()));
+        return Err(RouteError::InvalidCatalog(
+            "at least one provider is required".into(),
+        ));
     }
 
     if !profiles.iter().any(|profile| profile.enabled) {
-        return Err(RouteError::InvalidCatalog("at least one provider must be enabled".into()));
+        return Err(RouteError::InvalidCatalog(
+            "at least one provider must be enabled".into(),
+        ));
     }
 
     let mut names = std::collections::HashSet::new();
@@ -192,9 +204,7 @@ pub fn select_provider<'a>(
             let cost_ranks = rank_by(&eligible, total_price);
             eligible.sort_by(|a, b| {
                 let score = |p: &ProviderProfile| {
-                    quality_ranks[&p.name] * 2
-                        + latency_ranks[&p.name]
-                        + cost_ranks[&p.name]
+                    quality_ranks[&p.name] * 2 + latency_ranks[&p.name] + cost_ranks[&p.name]
                 };
                 score(a)
                     .cmp(&score(b))
@@ -205,7 +215,10 @@ pub fn select_provider<'a>(
         }
     }
 
-    eligible.first().copied().ok_or(RouteError::NoEligibleProvider)
+    eligible
+        .first()
+        .copied()
+        .ok_or(RouteError::NoEligibleProvider)
 }
 
 fn strategy_allows(strategy: ExecutionStrategy, location: ExecutionLocation) -> bool {
@@ -215,7 +228,10 @@ fn strategy_allows(strategy: ExecutionStrategy, location: ExecutionLocation) -> 
         ExecutionStrategy::LocalFirst => true,
         ExecutionStrategy::PrivateCloudOnly => location == ExecutionLocation::PrivateCloud,
         ExecutionStrategy::PrivateCloudFirst => {
-            matches!(location, ExecutionLocation::PrivateCloud | ExecutionLocation::PublicCloud)
+            matches!(
+                location,
+                ExecutionLocation::PrivateCloud | ExecutionLocation::PublicCloud
+            )
         }
         ExecutionStrategy::PublicCloudEligible => location == ExecutionLocation::PublicCloud,
     }
@@ -237,8 +253,12 @@ fn location_is_permitted(contract: &WorkloadContract, location: ExecutionLocatio
 }
 
 fn location_rank(contract: &WorkloadContract, location: ExecutionLocation) -> u8 {
-    let has_local = contract.allowed_execution.contains(&ExecutionLocation::Local);
-    let has_private = contract.allowed_execution.contains(&ExecutionLocation::PrivateCloud);
+    let has_local = contract
+        .allowed_execution
+        .contains(&ExecutionLocation::Local);
+    let has_private = contract
+        .allowed_execution
+        .contains(&ExecutionLocation::PrivateCloud);
     match location {
         ExecutionLocation::Local => 0,
         ExecutionLocation::PrivateCloud if has_local => 1,
