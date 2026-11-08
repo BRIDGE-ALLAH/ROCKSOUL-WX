@@ -1,5 +1,3 @@
-use hmac::{Hmac, Mac};
-use sha2::Sha256;
 use axum::{
     Json, Router,
     extract::{Path, State, rejection::JsonRejection},
@@ -7,8 +5,10 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
+use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sha2::Sha256;
 use std::{
     collections::HashMap,
     collections::hash_map::RandomState,
@@ -1193,7 +1193,8 @@ mod tests {
     async fn executes_workload_and_persists_receipt() {
         let (upstream_url, upstream_task) = mock_provider().await;
         let receipt_dir = test_receipt_dir();
-        let state = test_state(test_provider(&upstream_url), receipt_dir.clone(), None);
+        let mut state = test_state(test_provider(&upstream_url), receipt_dir.clone(), None);
+        state.receipt_hmac_key = Some(Arc::from("receipt-test-key-with-more-than-32-bytes"));
         let payload = json!({
             "contract": {
                 "objective": "Greet the operator",
@@ -1205,7 +1206,7 @@ mod tests {
             "input": "Say hello."
         });
 
-        let response = app(state)
+        let response = app(state.clone())
             .oneshot(
                 Request::builder()
                     .method("POST")
@@ -1228,7 +1229,30 @@ mod tests {
         assert_eq!(result["receipt"]["route_objective"], "balanced");
         assert_eq!(result["receipt"]["estimated_cost_microusd"], 1);
         assert!(result["receipt"]["provider_latency_ms"].is_number());
-        assert!(receipt_dir.join(format!("{receipt_id}.json")).exists());
+        let receipt_path = receipt_dir.join(format!("{receipt_id}.json"));
+        assert!(receipt_path.exists());
+        let stored = fs::read(&receipt_path).await.unwrap();
+        let mut stored_json: Value = serde_json::from_slice(&stored).unwrap();
+        assert!(stored_json["hmac_sha256"].is_string());
+        stored_json["receipt"]["provider"] = json!("tampered-provider");
+        fs::write(&receipt_path, serde_json::to_vec(&stored_json).unwrap())
+            .await
+            .unwrap();
+
+        let verify_response = app(state)
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/v1/receipts/{receipt_id}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(verify_response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        let verify_body = to_bytes(verify_response.into_body(), usize::MAX).await.unwrap();
+        let verify_error: Value = serde_json::from_slice(&verify_body).unwrap();
+        assert_eq!(verify_error["error"], "receipt_integrity_failed");
 
         upstream_task.abort();
         let _ = fs::remove_dir_all(receipt_dir).await;
