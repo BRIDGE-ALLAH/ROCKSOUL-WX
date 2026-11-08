@@ -140,6 +140,17 @@ jobs:
           & "C:/Program Files (x86)/Inno Setup 6/ISCC.exe" "/DAppVersion=$version" "packaging/windows/ROCKSOUL-WX.iss"
           if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed with exit code $LASTEXITCODE" }
 
+      - name: Install and smoke test Windows installer
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_EVENT_NAME -eq "create") {
+            $releaseTag = $env:GITHUB_REF_NAME -replace "^release/", ""
+          } else {
+            $releaseTag = $env:GITHUB_REF_NAME
+          }
+          $version = $releaseTag.Substring(1)
+          & "packaging/windows/Smoke-Test-Installer.ps1" -InstallerPath "dist/windows/ROCKSOUL-WX-Setup-$version.exe"
+
       - name: Generate SHA-256 checksum
         shell: pwsh
         run: |
