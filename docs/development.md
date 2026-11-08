@@ -3,45 +3,26 @@
 ## Prerequisites
 
 - Stable Rust and Cargo (edition 2024 support).
-- Docker and Docker Compose for the local Ollama provider, or an existing OpenAI-compatible endpoint.
+- Docker and Docker Compose for local Ollama or one or more OpenAI-compatible endpoints.
 - Dioxus CLI for the web Command Deck.
 
-Install the Dioxus CLI using the official Dioxus installation instructions. The UI uses the web target.
-
-## Option A: Docker Compose (recommended)
-
-Copy the environment template and set a gateway key:
+## Local Compose
 
 ```bash
 cp .env.example .env
 python3 -c 'import secrets; print(secrets.token_hex(32))'
 ```
 
-Put the generated 64-character value in `WX_API_KEY` inside `.env`. Then start the local gateway and Ollama:
+Put the generated 64-character value in WX_API_KEY inside .env, then:
 
 ```bash
 docker compose up --build -d
 docker compose exec ollama ollama pull llama3.2
 ```
 
-The gateway is bound to `127.0.0.1:8080`; Ollama is bound to `127.0.0.1:11434`. Receipts are stored in the named `rocksoul_wx_receipts` volume. Do not expose these development ports directly to the public internet.
+Gateway and Ollama are bound to host loopback. Receipts are kept in a named Docker volume. Never publish development ports directly to the internet.
 
-Check the gateway:
-
-```bash
-curl -sS http://127.0.0.1:8080/healthz
-```
-
-## Option B: run the gateway on the host
-
-Start Ollama:
-
-```bash
-docker compose up -d ollama
-docker compose exec ollama ollama pull llama3.2
-```
-
-Then load environment variables and run the gateway:
+## Run gateway on the host
 
 ```bash
 set -a
@@ -50,27 +31,40 @@ set +a
 cargo run -p wx-gateway
 ```
 
-The default bind is `127.0.0.1:8080`. When binding to a non-loopback address, set `WX_API_KEY` to at least 32 characters. Public-cloud upstream endpoints must use HTTPS.
+Default bind is 127.0.0.1:8080. Non-loopback binds require WX_API_KEY with at least 32 characters. Public-cloud provider endpoints must use HTTPS.
 
-## Run the Dioxus Command Deck
+## Multi-provider catalog
 
-In another terminal:
+Create a JSON file with an array of provider profiles. Copy [the catalog example](../config/providers.production.example.json) to config/providers.local.json, replace example values, and set WX_PROVIDER_CATALOG_FILE=./config/providers.local.json.
+
+Each profile contains:
+- name, base_url, model, location (local, private_cloud, public_cloud)
+- quality_score (0–100) and p50_latency_ms (operator-supplied measurements)
+- optional input_cost_microusd_per_1k_tokens and output_cost_microusd_per_1k_tokens
+- optional api_key_env (environment variable name, not secret value)
+- timeout_seconds and enabled
+
+The key is read from the environment variable named by api_key_env, or its _FILE counterpart. For example, WX_PROVIDER_KEY_FILE=/run/secrets/provider_key supplies the value for WX_PROVIDER_KEY. Do not commit credentials or production provider configuration.
+
+Choose a routing objective and process-local rate:
 
 ```bash
-dx serve --package wx-command-deck --platform web --port 8081
+WX_ROUTE_OBJECTIVE=balanced # balanced | quality | cost | latency
+WX_RATE_LIMIT_PER_MINUTE=120
 ```
 
-Open the local Dioxus URL. The UI calls the gateway's `/v1/workloads/execute` endpoint. The gateway's default CORS allow-list includes `http://localhost:8081` and `http://127.0.0.1:8081`. Configure `WX_CORS_ORIGINS` if the UI is hosted elsewhere.
+The router filters providers through explicit location allow-list and deterministic privacy policy before ranking. Local is preferred over private cloud, then public cloud, whenever those locations are permitted. Public cloud requires explicit egress permission and cannot receive confidential/restricted content.
 
-The browser never receives the upstream provider key. If `WX_API_KEY` is configured, enter that gateway key in the Command Deck.
+Quality/p50 latency must come from repeatable tests. Price rates should be checked against current provider pricing. Receipts contain only post-execution estimates where rates and usage are known; they do not impose hard spend caps.
 
-## Use the workload API
+## Workload API
 
 Plan without executing:
 
 ```bash
 curl -sS -X POST http://127.0.0.1:8080/v1/workloads/plan \
   -H 'content-type: application/json' \
+  -H "Authorization: Bearer $WX_API_KEY" \
   -d '{
     "objective": "Summarize a public changelog",
     "data_classification": "public",
@@ -80,7 +74,7 @@ curl -sS -X POST http://127.0.0.1:8080/v1/workloads/plan \
   }'
 ```
 
-Execute against the configured local provider:
+Execute:
 
 ```bash
 curl -sS -X POST http://127.0.0.1:8080/v1/workloads/execute \
@@ -98,30 +92,35 @@ curl -sS -X POST http://127.0.0.1:8080/v1/workloads/execute \
   }'
 ```
 
-The response includes the selected plan, generated text, token usage (if provided by the model), supported acceptance checks, and receipt ID. Receipt metadata can be retrieved at `GET /v1/receipts/{id}`.
-
-## Use the OpenAI-compatible API
-
-`POST /v1/chat/completions` accepts the text-only, non-streaming OpenAI Chat Completions request shape. When the configured provider is public cloud, set `X-WX-Data-Classification` and explicitly allow egress with `X-WX-Allow-Egress: true`. The defaults are internal data and no egress.
-
-See [API Reference](api-reference.md) for request schemas, error codes, acceptance criteria, and restrictions.
-
 ## Configuration
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `WX_BIND_ADDR` | `127.0.0.1:8080` | Gateway bind address |
-| `WX_API_KEY` | unset | Required for non-loopback binds; min. 32 chars |
-| `WX_UPSTREAM_NAME` | `openai-compatible` | Display name in health/receipts |
-| `WX_UPSTREAM_BASE_URL` | `http://127.0.0.1:11434/v1` | Server-side provider base URL |
-| `WX_UPSTREAM_API_KEY` | unset | Optional upstream Bearer credential |
-| `WX_UPSTREAM_MODEL` | `llama3.2` | The only model allowed through this adapter |
-| `WX_UPSTREAM_LOCATION` | `local` | `local`, `private_cloud`, or `public_cloud` |
-| `WX_UPSTREAM_TIMEOUT_SECONDS` | `60` | Provider timeout, clamped to 1–300 seconds |
-| `WX_CORS_ORIGINS` | local Dioxus origins | Comma-separated browser origins |
-| `WX_RECEIPT_DIR` | `data/receipts` | Directory for per-execution receipt JSON |
+| WX_BIND_ADDR | 127.0.0.1:8080 | Gateway bind address |
+| WX_API_KEY / WX_API_KEY_FILE | unset | Bearer key; required for non-loopback; min. 32 chars |
+| WX_PROVIDER_CATALOG_FILE | unset | Optional provider profile JSON; absent means legacy single profile |
+| WX_ROUTE_OBJECTIVE | balanced | balanced, quality, cost, latency |
+| WX_RATE_LIMIT_PER_MINUTE | 120 | Per-key, process-local fixed-window limit |
+| WX_UPSTREAM_NAME | ollama | Legacy single-profile name |
+| WX_UPSTREAM_BASE_URL | local Ollama | Legacy provider endpoint |
+| WX_UPSTREAM_API_KEY / _FILE | unset | Legacy provider credential |
+| WX_UPSTREAM_MODEL | llama3.2 | Legacy configured model |
+| WX_UPSTREAM_LOCATION | local | local, private_cloud, public_cloud |
+| WX_UPSTREAM_TIMEOUT_SECONDS | 60 | Provider timeout (1–300 seconds) |
+| WX_CORS_ORIGINS | local Dioxus origins | Comma-separated allowed browser origins |
+| WX_RECEIPT_DIR | data/receipts | Local metadata receipts directory |
 
-## Tests and checks
+The _FILE mechanism is file-mounted secret injection, not a managed secret vault. Secrets are loaded at process start.
+
+## Command Deck
+
+```bash
+dx serve --package wx-command-deck --platform web --port 8081
+```
+
+Configure the gateway base URL and Bearer key. The browser never receives provider credentials.
+
+## Tests
 
 ```bash
 cargo fmt --all -- --check
@@ -129,24 +128,17 @@ cargo test --workspace --exclude wx-command-deck
 cargo check -p wx-command-deck --target wasm32-unknown-unknown
 ```
 
-The gateway tests use a local mock OpenAI-compatible server; they do not require an external API key or incur provider costs.
+Provider tests use local mock servers, not live credentials.
 
-## MVP limitations
+## Current limitations
 
-- Only one operator-configured OpenAI-compatible provider is active at a time.
-- Streaming responses are not supported.
-- The Command Deck has no user/tenant management yet.
-- A workload with `max_cost_microusd` is rejected until cost metering and budget enforcement exist.
-- `require_human_approval=true` is blocked; the approval workflow is not implemented.
-- Supported acceptance checks are deterministic and narrow. A passed check is not proof of semantic truth.
-- Receipts are local JSON files. They are not a distributed, tamper-evident ledger.
-- No rate limiter, multi-tenant isolation, or production secret manager is included yet.
+- Shared single gateway key; no tenant identity, user management, or tenant-level authorization.
+- In-memory limiter resets on restart and is not shared across replicas.
+- No retry/fallback after execution failure.
+- No pre-execution budget reservation or hard spend ceiling; max_cost_microusd remains rejected.
+- require_human_approval=true is blocked until approval workflow exists.
+- Streaming, multimodal inputs, and embeddings are unsupported.
+- Acceptance checks are narrow and do not prove semantic truth.
+- Receipts are local JSON metadata, not a tamper-evident ledger.
 
-## Implementation rules
-
-- Keep policy validation deterministic and unit tested.
-- Add tests for both allowed and denied paths.
-- Never log raw workload objectives, provider keys, or model payloads by default.
-- Provider URLs are operator-controlled; never accept an upstream URL from a workload request.
-- Re-check privacy and authorization before every external side effect.
-- Do not claim verification beyond the checks actually executed.
+Keep policy deterministic and unit-tested. Never log raw prompts, credentials, or model payloads by default. Never accept provider URLs from workload input.
