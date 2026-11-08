@@ -16,3 +16,4 @@ wx-policy = { path = "../../crates/wx-policy" }
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
+serde_json.workspace = true
