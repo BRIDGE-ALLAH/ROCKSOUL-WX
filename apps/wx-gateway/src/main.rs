@@ -190,11 +190,8 @@ struct ExecutionReceipt {
     raw_data_egress: EgressPolicy,
     usage: Option<TokenUsage>,
     acceptance: AcceptanceSummary,
-    #[serde(default)]
     route_objective: RouteObjective,
-    #[serde(default)]
     estimated_cost_microusd: Option<u64>,
-    #[serde(default)]
     provider_latency_ms: u64,
     note: String,
 }
@@ -234,11 +231,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     let mut providers = Vec::with_capacity(profiles.len());
     for profile in profiles {
-        if profile.location == ExecutionLocation::PublicCloud
+        if profile.location != ExecutionLocation::Local
             && !profile.base_url.starts_with("https://")
         {
             return Err(format!(
-                "public-cloud provider '{}' must use HTTPS",
+                "non-local provider '{}' must use HTTPS",
                 profile.name
             )
             .into());
@@ -1034,6 +1031,40 @@ mod tests {
         (format!("http://{address}/v1"), task)
     }
 
+    #[test]
+    fn rate_limiter_enforces_a_per_credential_window() {
+        let limiter = RateLimitState::new(2);
+        assert!(limiter.allow("test-key"));
+        assert!(limiter.allow("test-key"));
+        assert!(!limiter.allow("test-key"));
+        assert!(limiter.allow("different-key"));
+    }
+
+    #[test]
+    fn gateway_selects_the_highest_quality_eligible_provider() {
+        let mut state = test_state(
+            test_provider("http://127.0.0.1:11434/v1"),
+            test_receipt_dir(),
+            None,
+        );
+        let mut alternate = state.providers[0].profile.clone();
+        alternate.name = "quality-provider".to_owned();
+        alternate.model = "quality-model".to_owned();
+        alternate.quality_score = 96;
+        state.providers.push(RuntimeProvider {
+            profile: alternate,
+            client: test_provider("http://127.0.0.1:11434/v1"),
+        });
+        state.route_objective = RouteObjective::Quality;
+
+        let contract = WorkloadContract {
+            objective: "Generate a public explanation".to_owned(),
+            ..WorkloadContract::default()
+        };
+        let selected = select_runtime_provider(&state, &contract, None).unwrap();
+        assert_eq!(selected.profile.name, "quality-provider");
+    }
+
     #[tokio::test]
     async fn health_endpoint_is_available_without_api_key() {
         let state = test_state(
@@ -1109,6 +1140,10 @@ mod tests {
         assert_eq!(result["acceptance"]["status"], "passed");
 
         let receipt_id = result["receipt"]["id"].as_str().unwrap();
+        assert_eq!(result["receipt"]["provider"], "test-provider");
+        assert_eq!(result["receipt"]["route_objective"], "balanced");
+        assert_eq!(result["receipt"]["estimated_cost_microusd"], 1);
+        assert!(result["receipt"]["provider_latency_ms"].is_number());
         assert!(receipt_dir.join(format!("{receipt_id}.json")).exists());
 
         upstream_task.abort();
