@@ -405,6 +405,13 @@ mod tests {
     }
 
     #[test]
+    fn rejects_catalog_without_an_enabled_provider() {
+        let mut disabled = profile("disabled", ExecutionLocation::Local, 80, 200, 100);
+        disabled.enabled = false;
+        assert!(validate_catalog(&[disabled]).is_err());
+    }
+
+    #[test]
     fn rejects_duplicate_or_invalid_catalog_entries() {
         let first = profile("same", ExecutionLocation::Local, 80, 200, 100);
         let second = profile("SAME", ExecutionLocation::Local, 80, 200, 100);
