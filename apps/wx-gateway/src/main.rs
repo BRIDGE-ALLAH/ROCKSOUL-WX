@@ -172,6 +172,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|_| "http://127.0.0.1:11434/v1".to_owned());
     let upstream_model =
         std::env::var("WX_UPSTREAM_MODEL").unwrap_or_else(|_| "llama3.2".to_owned());
+    if provider_location == ExecutionLocation::PublicCloud
+        && !upstream_base_url.starts_with("https://")
+    {
+        return Err("public-cloud provider endpoints must use HTTPS".into());
+    }
     let upstream_api_key = std::env::var("WX_UPSTREAM_API_KEY")
         .ok()
         .filter(|value| !value.trim().is_empty());
@@ -296,6 +301,13 @@ async fn execute_workload(
     }
 
     let contract = request.contract;
+    if contract.max_cost_microusd.is_some() {
+        return Err(api_error(
+            StatusCode::NOT_IMPLEMENTED,
+            "budget_enforcement_unavailable",
+            "This release has no provider price meter; remove max_cost_microusd or wait for budget enforcement.",
+        ));
+    }
     let plan = wx_planner::plan(contract.clone()).map_err(|violations| {
         (
             StatusCode::UNPROCESSABLE_ENTITY,
@@ -347,11 +359,26 @@ async fn execute_workload(
         content: request.input,
     }];
 
-    let completion = state
-        .provider
-        .complete(&messages, request.model.as_deref())
+    let completion_result = if let Some(deadline_ms) = contract.deadline_ms {
+        tokio::time::timeout(
+            Duration::from_millis(deadline_ms),
+            state.provider.complete(&messages, request.model.as_deref()),
+        )
         .await
-        .map_err(provider_error)?;
+        .map_err(|_| {
+            api_error(
+                StatusCode::GATEWAY_TIMEOUT,
+                "workload_deadline_exceeded",
+                "The configured workload deadline elapsed before the provider completed.",
+            )
+        })?
+    } else {
+        state
+            .provider
+            .complete(&messages, request.model.as_deref())
+            .await
+    };
+    let completion = completion_result.map_err(provider_error)?;
 
     let acceptance = evaluate_acceptance(&contract.acceptance_criteria, &completion.content);
     let receipt = build_receipt(
@@ -728,6 +755,11 @@ fn provider_error(error: ProviderError) -> (StatusCode, Json<ApiError>) {
             StatusCode::BAD_GATEWAY,
             "provider_unavailable",
             "The configured provider could not be reached or timed out.",
+        ),
+        ProviderError::ModelNotAllowed => (
+            StatusCode::BAD_REQUEST,
+            "model_not_allowed",
+            "The requested model is not the model configured by the gateway operator.",
         ),
         ProviderError::UpstreamStatus(status) => (
             StatusCode::BAD_GATEWAY,
