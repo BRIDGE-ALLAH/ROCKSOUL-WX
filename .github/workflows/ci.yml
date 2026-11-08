@@ -62,7 +62,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path "dist/windows" | Out-Null
           $manifest = Get-Content "Cargo.toml" -Raw
-          if ($manifest -notmatch "(?s)\[workspace\.package\]\s+version\s*=\s*`"([^`"]+)`"") {
+          if ($manifest -notmatch '(?s)\[workspace\.package\]\s+version\s*=\s*"([^"]+)"') {
             throw "Could not read workspace.package.version from Cargo.toml."
           }
           $appVersion = $Matches[1]
