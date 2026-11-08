@@ -103,7 +103,7 @@ dx serve --package wx-command-deck --platform web
 
 ## Status
 
-Early architecture and implementation scaffold. APIs and schemas are expected to evolve before a stable release. See [RFC-001](docs/RFC-001-outcome-driven-intelligence-fabric.md) for the design.
+Early architecture and implementation scaffold. APIs and schemas are expected to evolve before a stable release. See [RFC-001](docs/RFC-001-outcome-driven-intelligence-fabric.md), the [workload contract](docs/workload-contract.md), the [threat model](docs/threat-model.md), and the [development guide](docs/development.md).
 
 ## License
 
