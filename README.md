@@ -54,6 +54,19 @@ docs/
   threat-model.md
 ```
 
+## Product experiments and research agenda
+
+The differentiators are hypotheses to validate, not claims of prior-art uniqueness or achieved performance:
+
+- [Workload Compiler](docs/RFC-001-outcome-driven-intelligence-fabric.md#workload-compiler): compile objectives into typed, governed work plans.
+- [Dissent-to-Intervention](docs/research-agenda.md#2-dissent-to-intervention-engine): use disagreement to select retrieval, deterministic checks, clarification, or human review.
+- [Data Sovereignty](docs/research-agenda.md#3-data-sovereignty-compiler): keep data labels attached across tools, context, caches, logs, and egress.
+- [Proof-Carrying Receipts](docs/research-agenda.md#4-proof-carrying-execution-receipts): record execution provenance and named checks without claiming universal proof of truth.
+- [Verified Semantic Cache](docs/research-agenda.md#5-verified-semantic-cache): evaluate false-hit risk before optimizing cache reuse.
+- [Temporal Scheduling](docs/research-agenda.md#6-temporal-and-carbon-aware-scheduling): schedule only deferrable work against measured cost, latency, and energy signals.
+
+See [research agenda](docs/research-agenda.md) for falsifiable hypotheses, evaluation metrics, and research governance.
+
 ## Development
 
 Prerequisites: stable Rust (edition 2024), Cargo, and the Dioxus CLI for the web UI.
