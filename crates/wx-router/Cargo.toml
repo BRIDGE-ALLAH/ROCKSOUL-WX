@@ -9,6 +9,7 @@ serde.workspace = true
 thiserror.workspace = true
 wx-contract = { path = "../wx-contract" }
 wx-policy = { path = "../wx-policy" }
+wx-planner = { path = "../wx-planner" }
 wx-provider = { path = "../wx-provider" }
 
 [dev-dependencies]
