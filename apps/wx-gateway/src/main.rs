@@ -324,7 +324,7 @@ async fn health(State(state): State<GatewayState>) -> Json<HealthResponse> {
         status: "ok",
         service: "wx-gateway",
         mode: "workload-execution",
-        provider_count: state.providers.len(),
+        provider_count: state.providers.iter().filter(|provider| provider.profile.enabled).count(),
         routing_objective: state.route_objective.as_str(),
     })
 }
