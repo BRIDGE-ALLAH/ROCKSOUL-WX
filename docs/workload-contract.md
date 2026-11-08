@@ -28,7 +28,7 @@ The server assigns a UUID when `id` is omitted.
 |---|---|---|---|
 | `id` | UUID | generated | Stable workload identifier |
 | `objective` | string | required | Outcome to accomplish |
-| `data_classification` | enum | `public` | `public`, `internal`, `confidential`, `restricted` |
+| `data_classification` | enum | `internal` | `public`, `internal`, `confidential`, `restricted` |
 | `raw_data_egress` | enum | `deny` | Whether raw workload data may leave the trusted boundary |
 | `allowed_execution` | enum array | `["local"]` | Permitted locations: `local`, `private_cloud`, `public_cloud` |
 | `max_cost_microusd` | integer/null | null | Maximum budget in micro-USD; a value of zero means no spend is permitted |
