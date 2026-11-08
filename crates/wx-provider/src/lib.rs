@@ -25,6 +25,8 @@ pub enum ProviderError {
     Transport(#[from] reqwest::Error),
     #[error("provider returned HTTP status {0}")]
     UpstreamStatus(u16),
+    #[error("requested model is not the operator-configured model")]
+    ModelNotAllowed,
     #[error("provider response did not contain choices[0].message.content")]
     InvalidResponse,
 }
@@ -96,9 +98,11 @@ impl ProviderClient {
         messages: &[ChatMessage],
         requested_model: Option<&str>,
     ) -> Result<ProviderCompletion, ProviderError> {
-        let model = requested_model
-            .filter(|candidate| !candidate.trim().is_empty())
-            .unwrap_or(&self.default_model);
+        let requested_model = requested_model.filter(|candidate| !candidate.trim().is_empty());
+        if requested_model.is_some_and(|candidate| candidate != self.default_model) {
+            return Err(ProviderError::ModelNotAllowed);
+        }
+        let model = &self.default_model;
 
         let mut request = self
             .client
