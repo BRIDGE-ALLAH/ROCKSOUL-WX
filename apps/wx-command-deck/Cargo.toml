@@ -1,0 +1,12 @@
+[package]
+name = "wx-command-deck"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+dioxus.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+gloo-net = { version = "0.6", features = ["http"] }
+serde_json.workspace = true

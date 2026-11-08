@@ -1,0 +1,13 @@
+/target
+/dist
+/build
+.env
+.env.*
+!.env.example
+!.env.production.example
+secrets/
+config/providers.production.json
+*.pem
+*.key
+.DS_Store
+*.log

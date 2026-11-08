@@ -1,0 +1,49 @@
+name: Rust CI
+
+on:
+  push:
+    branches: [main, "feat/**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Test core crates and gateway
+        run: cargo test --workspace --exclude wx-command-deck
+
+  command-deck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Check Dioxus web target
+        run: cargo check -p wx-command-deck --target wasm32-unknown-unknown
+
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Compose configuration
+        run: WX_API_KEY=ci-only-placeholder-key-at-least-32-characters docker compose config --quiet
+      - name: Build gateway container
+        run: docker build --tag rocksoul-wx:ci .
+
+      - name: Validate production Compose configuration
+        run: |
+          mkdir -p secrets config
+          printf 'ci-gateway-secret-placeholder-32-characters' > secrets/gateway_api_key
+          printf 'ci-provider-secret-placeholder' > secrets/primary_provider_api_key
+          cp config/providers.production.example.json config/providers.production.json
+          docker compose --env-file .env.production.example -f compose.production.yaml config --quiet

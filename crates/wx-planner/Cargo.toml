@@ -1,0 +1,9 @@
+[package]
+name = "wx-planner"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+wx-contract = { path = "../wx-contract" }
+wx-policy = { path = "../wx-policy" }

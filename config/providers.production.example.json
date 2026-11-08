@@ -1,0 +1,15 @@
+[
+  {
+    "name": "primary-inference",
+    "base_url": "https://replace-with-provider-host.example/v1",
+    "model": "replace-with-approved-model-id",
+    "location": "private_cloud",
+    "quality_score": 50,
+    "p50_latency_ms": 1000,
+    "input_cost_microusd_per_1k_tokens": null,
+    "output_cost_microusd_per_1k_tokens": null,
+    "api_key_env": "WX_PRIMARY_PROVIDER_API_KEY",
+    "timeout_seconds": 60,
+    "enabled": false
+  }
+]
