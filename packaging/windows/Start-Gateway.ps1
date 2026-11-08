@@ -7,6 +7,7 @@ if (-not (Test-Path -LiteralPath $gatewayExe)) {
 $dataDir = Join-Path $env:LOCALAPPDATA "ROCKSOUL-WX"
 $receiptDir = Join-Path $dataDir "receipts"
 $keyPath = Join-Path $dataDir "gateway.key"
+$integrityKeyPath = Join-Path $dataDir "receipt-integrity.key"
 New-Item -ItemType Directory -Force -Path $dataDir, $receiptDir | Out-Null
 
 if (-not (Test-Path -LiteralPath $keyPath)) {
@@ -19,9 +20,20 @@ if (-not (Test-Path -LiteralPath $keyPath)) {
 $apiKey = ([System.IO.File]::ReadAllText($keyPath)).Trim()
 if ($apiKey.Length -lt 32) { throw "The local gateway key is invalid. Delete '$keyPath' and restart to regenerate it." }
 
+if (-not (Test-Path -LiteralPath $integrityKeyPath)) {
+    $integrityBytes = New-Object byte[] 32
+    $integrityRng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try { $integrityRng.GetBytes($integrityBytes) } finally { $integrityRng.Dispose() }
+    $integrityKey = [BitConverter]::ToString($integrityBytes).Replace("-", "").ToLowerInvariant()
+    [System.IO.File]::WriteAllText($integrityKeyPath, $integrityKey, [System.Text.Encoding]::ASCII)
+}
+$integrityKey = ([System.IO.File]::ReadAllText($integrityKeyPath)).Trim()
+if ($integrityKey.Length -lt 32) { throw "The receipt integrity key is invalid. Delete '$integrityKeyPath' and restart to regenerate it." }
+
 # Local-only defaults: this test installer never exposes the gateway to the LAN.
 $env:WX_BIND_ADDR = "127.0.0.1:8080"
 $env:WX_API_KEY = $apiKey
+$env:WX_RECEIPT_HMAC_KEY_FILE = $integrityKeyPath
 $env:WX_RATE_LIMIT_PER_MINUTE = "120"
 $env:WX_ROUTE_OBJECTIVE = "balanced"
 $env:WX_RECEIPT_DIR = $receiptDir
@@ -36,6 +48,7 @@ Write-Host ""
 Write-Host "ROCKSOUL-WX local gateway" -ForegroundColor Cyan
 Write-Host "Listening: http://127.0.0.1:8080"
 Write-Host "API key file: $keyPath"
+Write-Host "Receipt integrity key: $integrityKeyPath"
 Write-Host "Receipts: $receiptDir"
 Write-Host "Provider: Ollama at http://127.0.0.1:11434 (model llama3.2)"
 Write-Host "The API key is stored for the current Windows user only."
