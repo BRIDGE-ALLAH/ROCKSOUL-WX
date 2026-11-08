@@ -54,6 +54,9 @@ pub fn plan(contract: WorkloadContract) -> Result<ExecutionPlan, Vec<PolicyViola
         ExecutionStrategy::PrivateCloudOnly => vec![
             "The contract permits private-cloud execution but does not permit local execution.".to_owned(),
         ],
+        ExecutionStrategy::PrivateCloudFirst => vec![
+            "Private-cloud execution is preferred; public-cloud fallback is explicitly permitted by the contract.".to_owned(),
+        ],
         ExecutionStrategy::PublicCloudEligible => vec![
             "Public-cloud execution is explicitly allowed and raw-data egress is permitted.".to_owned(),
             "Provider selection and actual execution are outside this planning milestone.".to_owned(),
@@ -86,10 +89,12 @@ fn choose_strategy(contract: &WorkloadContract) -> ExecutionStrategy {
         .allowed_execution
         .contains(&ExecutionLocation::PublicCloud);
 
-    if allows_local && allows_private {
+    if allows_local && (allows_private || allows_public) {
         ExecutionStrategy::LocalFirst
     } else if allows_local {
         ExecutionStrategy::LocalOnly
+    } else if allows_private && allows_public {
+        ExecutionStrategy::PrivateCloudFirst
     } else if allows_private {
         ExecutionStrategy::PrivateCloudOnly
     } else if allows_public {
