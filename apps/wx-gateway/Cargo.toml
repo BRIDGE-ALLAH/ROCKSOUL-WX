@@ -1,0 +1,15 @@
+[package]
+name = "wx-gateway"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+axum.workspace = true
+serde.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+wx-contract = { path = "../../crates/wx-contract" }
+wx-planner = { path = "../../crates/wx-planner" }
+wx-policy = { path = "../../crates/wx-policy" }
