@@ -103,7 +103,7 @@ jobs:
         run: |
           $version = $env:GITHUB_REF_NAME.Substring(1)
           New-Item -ItemType Directory -Force -Path "dist/windows" | Out-Null
-          & "C:Program Files (x86)Inno Setup 6ISCC.exe" "/DAppVersion=$version" "packaging/windows/ROCKSOUL-WX.iss"
+          & "C:/Program Files (x86)/Inno Setup 6/ISCC.exe" "/DAppVersion=$version" "packaging/windows/ROCKSOUL-WX.iss"
           if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed with exit code $LASTEXITCODE" }
 
       - name: Generate SHA-256 checksum
@@ -119,5 +119,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: pwsh
         run: |
-          gh release upload $env:GITHUB_REF_NAME dist/windows/ROCKSOUL-WX-Setup-*.exe dist/windows/ROCKSOUL-WX-Setup-*.exe.sha256 --clobber
+          $installer = Get-ChildItem "dist/windows/ROCKSOUL-WX-Setup-*.exe" | Select-Object -First 1
+          if (-not $installer) { throw "Windows installer was not produced." }
+          $checksum = "$($installer.FullName).sha256"
+          if (-not (Test-Path -LiteralPath $checksum)) { throw "Installer checksum was not produced." }
+          gh release upload $env:GITHUB_REF_NAME $installer.FullName $checksum --clobber
           if ($LASTEXITCODE -ne 0) { throw "Could not attach the Windows installer to the GitHub Release." }
