@@ -106,7 +106,7 @@ struct HealthResponse {
     routing_objective: &'static str,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 struct ApiError {
     error: &'static str,
     message: String,
