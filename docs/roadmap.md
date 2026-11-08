@@ -1,23 +1,24 @@
 # ROCKSOUL-WX Roadmap
 
-This roadmap records the remaining work required to move from the v0.2.0 release candidate to an operated production service. A successful build or GitHub Release is not the same as a live production deployment.
+This roadmap records the remaining work required to move from the published v0.2.0 release toward an operated production service. The v0.2.1 patch adds receipt-integrity verification; release publication is tracked separately from live deployment. A successful build or GitHub Release is not the same as a live production deployment.
 
-## M0 — v0.2.0 release and Windows test package
+## M0 — Release and Windows test package
 
-**Status: release workflow ready; publication pending.**
+**Status: v0.2.0 published; v0.2.1 receipt-integrity patch release is in progress.**
 
 Completed:
 - Rust workspace, policy-first provider routing, Axum gateway, and Dioxus web Command Deck.
 - Fail-closed privacy/egress policy and provider allow-listing.
 - Linux multi-architecture container build, SBOM/provenance generation, and keyless image signing workflow.
 - Caddy-based HTTPS deployment template and single-operator runbook.
-- Windows x64 gateway installer source, per-user API key bootstrap, PowerShell smoke test, and Inno Setup compilation in CI.
+- Windows x64 gateway installer source, per-user gateway and receipt-integrity key bootstrap, PowerShell smoke test, and Inno Setup compilation in CI.
+- GitHub Release `v0.2.0` with the Windows installer and SHA-256 checksum.
+- Receipt HMAC hardening merged to main; the `v0.2.1` image/installer release workflow has been triggered.
 
 Remaining acceptance:
-- Publish tag `v0.2.0` and GitHub Release.
-- Attach `ROCKSOUL-WX-Setup-0.2.0.exe` and its SHA-256 checksum.
-- Verify release image tags, signature, SBOM, and provenance.
-- Install on a clean Windows 10/11 x64 machine and verify health, authenticated planning, and real provider execution.
+- Verify `v0.2.1` image signature, SBOM/provenance, installer and checksum assets after its release workflow completes.
+- Run the Windows installer on a clean Windows 10/11 machine; the CI runtime install/launch/uninstall test is being added in PR #19.
+- Verify real provider execution with an installed local model or configured provider. The installer smoke test does not exercise inference.
 
 ## M1 — First controlled production deployment
 
@@ -74,30 +75,29 @@ Acceptance:
 
 ## M4 — Durable audit and operational reliability
 
-**Status: partially implemented; durable storage and operational reliability remain open.**
+**Status: partially implemented; durable storage and operations remain open.**
 
-Implemented in the receipt-integrity hardening branch:
+Implemented:
 - Per-record HMAC-SHA-256 signatures when `WX_RECEIPT_HMAC_KEY` is configured.
-- Signature verification on retrieval; altered signed records fail closed.
-- Non-loopback binds require a 32-character receipt integrity key.
+- Signature verification on retrieval; modified records and receipt-ID/storage-key mismatches fail closed.
+- Non-loopback binds require a 32-character receipt-integrity key.
+- Production Compose mounts the key as a secret; Windows creates a per-user key.
+
+Security boundary:
+- HMAC detects content alteration when the key remains protected. It does not detect deletion or rollback of old receipt files and is not an append-only distributed ledger.
+- Unsigned legacy receipts from v0.2.0 are not silently promoted to trusted signed receipts after upgrade.
+- The operator must protect and back up the HMAC key; losing it makes signed receipts unverifiable.
 
 Still required:
-- Database-backed receipt persistence, retention, and tested backup/restore.
-- Detection of deletion/rollback and append-only audit history.
-- Distributed rate limiting, metrics/alerts, retry safeguards, and recovery exercise.
-
-Required work:
-- Durable database-backed receipt storage with migrations, access controls, retention, and backup/restore.
-- Tamper-evident receipt integrity (for example, a keyed signature or append-only hash chain with protected key management).
-- Bounded provider retries only where request semantics and idempotency permit; circuit breaker and clear failure states.
-- Distributed rate limiting and service-level metrics for latency, errors, queueing, provider usage, and budget state.
-- Vulnerability scanning, dependency update policy, incident runbooks, and a recovery exercise.
+- Database-backed receipt persistence, migrations, retention, and tested backup/restore.
+- Append-only history or protected sequence/checkpoints to detect deletion and rollback.
+- Distributed rate limiting, metrics/alerts, safe retries/circuit breakers with idempotency, vulnerability scanning, and recovery exercise.
 
 Acceptance:
-- Receipt writes are atomic and durable through process restarts and interrupted writes.
-- Integrity verification detects altered, missing, or reordered records.
-- Retry tests prove no duplicate billable execution for non-idempotent requests.
-- Alerts are exercised; restore and rollback are demonstrated.
+- Receipt writes survive restarts and interrupted writes.
+- Integrity verification detects changes; the selected durable audit design also detects deletion/rollback.
+- Retry tests prove non-idempotent requests are not duplicated.
+- Alert routing and restore/rollback exercise are demonstrated.
 
 ## M5 — Expanded API and client capabilities
 
