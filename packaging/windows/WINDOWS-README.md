@@ -30,6 +30,7 @@ Restart the ROCKSOUL-WX gateway after Ollama is ready. Provider execution will f
 ## Local credentials and data
 
 - A 256-bit random gateway key is created on first start at %LOCALAPPDATA%\ROCKSOUL-WX\gateway.key.
+- A separate 256-bit receipt-integrity key is created at `%LOCALAPPDATA%\\ROCKSOUL-WX\\receipt-integrity.key` and used for HMAC-SHA-256 verification.
 - Both keys are kept outside the installation directory and are reused on later starts.
 - Execution receipt metadata is stored under %LOCALAPPDATA%\ROCKSOUL-WX\receipts.
 - Receipt HMAC detects content alteration when the key is protected, but does not detect deletion or rollback of old files and is not a distributed ledger. The installer binds the API to loopback only. Do not change this to a LAN/public bind without configuring a strong key, firewall rules, TLS termination, and a reviewed deployment architecture.
