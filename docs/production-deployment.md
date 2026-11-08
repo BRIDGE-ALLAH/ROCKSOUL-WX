@@ -21,16 +21,17 @@ From the repository root:
 mkdir -p secrets config
 umask 077
 openssl rand -hex 32 > secrets/gateway_api_key
+openssl rand -hex 32 > secrets/receipt_hmac_key
 : > secrets/primary_provider_api_key
-chmod 600 secrets/gateway_api_key secrets/primary_provider_api_key
+chmod 600 secrets/gateway_api_key secrets/receipt_hmac_key secrets/primary_provider_api_key
 # The gateway container runs as uid/gid 10001; allow only that identity to read.
-sudo chown 10001:10001 secrets/gateway_api_key secrets/primary_provider_api_key
-sudo chmod 0400 secrets/gateway_api_key secrets/primary_provider_api_key
+sudo chown 10001:10001 secrets/gateway_api_key secrets/receipt_hmac_key secrets/primary_provider_api_key
+sudo chmod 0400 secrets/gateway_api_key secrets/receipt_hmac_key secrets/primary_provider_api_key
 ```
 
 Place the real provider key into `secrets/primary_provider_api_key` using your secret-delivery process. Do not commit secret files or paste credentials into issues, chat, or source files.
 
-The gateway reads `WX_API_KEY_FILE` and provider `*_FILE` environment variables at process startup. Compose file-source secrets are read-only host-file mounts, so the files must be readable by container uid/gid 10001; the commands above set this explicitly. Secret rotation requires updating the file and recreating the gateway container.
+The gateway reads `WX_API_KEY_FILE`, `WX_RECEIPT_HMAC_KEY_FILE`, and provider `*_FILE` environment variables at process startup. The receipt HMAC key must be at least 32 characters and is required for non-loopback binds. Back it up separately and restrict access: loss of this key makes signed receipts unverifiable. Compose file-source secrets are read-only host-file mounts, so the files must be readable by container uid/gid 10001; the commands above set this explicitly. Secret rotation requires updating the file and recreating the gateway container.
 
 ## 3. Configure providers
 
@@ -82,7 +83,7 @@ Configure the Command Deck's gateway URL as `https://$WX_DOMAIN`. Keep the gatew
 ## 5. Operations
 
 - Monitor container restarts, provider errors, 429 rate-limit responses, disk capacity, Caddy certificate renewal, and provider billing independently.
-- Back up the `rocksoul_wx_receipts` and Caddy volumes. Receipts are local JSON metadata files; they are not a distributed or tamper-evident audit ledger.
+- Back up the `rocksoul_wx_receipts` and Caddy volumes, plus the receipt HMAC key. Receipt HMAC detects modification of an individual stored record, but does not detect file deletion/rollback and is not a distributed append-only audit ledger.
 - Rotate gateway and provider credentials through the secret file paths and recreate the gateway container.
 - Review provider price schedules and re-measure quality/latency inputs whenever providers or models change.
 - Roll back by changing `WX_IMAGE_TAG` to the previous known-good image and recreating the stack.
