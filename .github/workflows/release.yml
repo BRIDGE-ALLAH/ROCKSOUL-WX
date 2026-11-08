@@ -1,4 +1,4 @@
-name: Release Container
+name: Release
 
 on:
   push:
@@ -76,3 +76,48 @@ jobs:
           else
             gh release create "${GITHUB_REF_NAME}" --generate-notes
           fi
+
+  windows-installer:
+    needs: publish
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    env:
+      RUSTFLAGS: -C target-feature=+crt-static
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build native Windows gateway
+        run: cargo build --release -p wx-gateway
+
+      - name: Install Inno Setup
+        shell: powershell
+        run: choco install innosetup --yes --no-progress
+
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME.Substring(1)
+          New-Item -ItemType Directory -Force -Path "dist/windows" | Out-Null
+          & "C:Program Files (x86)Inno Setup 6ISCC.exe" "/DAppVersion=$version" "packaging/windows/ROCKSOUL-WX.iss"
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed with exit code $LASTEXITCODE" }
+
+      - name: Generate SHA-256 checksum
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem "dist/windows/ROCKSOUL-WX-Setup-*.exe" | Select-Object -First 1
+          if (-not $installer) { throw "Windows installer was not produced." }
+          $hash = (Get-FileHash -Algorithm SHA256 $installer.FullName).Hash.ToLowerInvariant()
+          [System.IO.File]::WriteAllText("$($installer.FullName).sha256", "$hash  $($installer.Name)" + [Environment]::NewLine)
+
+      - name: Attach installer and checksum to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          gh release upload $env:GITHUB_REF_NAME dist/windows/ROCKSOUL-WX-Setup-*.exe dist/windows/ROCKSOUL-WX-Setup-*.exe.sha256 --clobber
+          if ($LASTEXITCODE -ne 0) { throw "Could not attach the Windows installer to the GitHub Release." }
