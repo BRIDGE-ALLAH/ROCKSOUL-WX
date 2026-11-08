@@ -100,11 +100,14 @@ impl ProviderClient {
             .filter(|candidate| !candidate.trim().is_empty())
             .unwrap_or(&self.default_model);
 
-        let mut request = self.client.post(self.endpoint.clone()).json(&serde_json::json!({
-            "model": model,
-            "messages": messages,
-            "stream": false
-        }));
+        let mut request = self
+            .client
+            .post(self.endpoint.clone())
+            .json(&serde_json::json!({
+                "model": model,
+                "messages": messages,
+                "stream": false
+            }));
 
         if let Some(api_key) = &self.api_key {
             request = request.bearer_auth(api_key);
@@ -164,19 +167,18 @@ mod tests {
 
     #[test]
     fn rejects_non_http_schemes_and_embedded_credentials() {
-        assert!(ProviderClient::new(
-            "file:///etc/passwd",
-            None,
-            "model",
-            Duration::from_secs(5)
-        )
-        .is_err());
-        assert!(ProviderClient::new(
-            "https://user:password@example.com/v1",
-            None,
-            "model",
-            Duration::from_secs(5)
-        )
-        .is_err());
+        assert!(
+            ProviderClient::new("file:///etc/passwd", None, "model", Duration::from_secs(5))
+                .is_err()
+        );
+        assert!(
+            ProviderClient::new(
+                "https://user:password@example.com/v1",
+                None,
+                "model",
+                Duration::from_secs(5)
+            )
+            .is_err()
+        );
     }
 }
