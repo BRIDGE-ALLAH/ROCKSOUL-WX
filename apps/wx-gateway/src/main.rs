@@ -743,14 +743,6 @@ fn select_runtime_provider<'a>(
         })
 }
 
-fn location_name(location: ExecutionLocation) -> &'static str {
-    match location {
-        ExecutionLocation::Local => "local",
-        ExecutionLocation::PrivateCloud => "private_cloud",
-        ExecutionLocation::PublicCloud => "public_cloud",
-    }
-}
-
 fn parse_classification_header(headers: &HeaderMap) -> ApiResult<DataClassification> {
     let value = headers
         .get("x-wx-data-classification")
