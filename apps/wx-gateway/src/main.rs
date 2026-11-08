@@ -1,3 +1,5 @@
+use hmac::{Hmac, Mac};
+use sha2::Sha256;
 use axum::{
     Json, Router,
     extract::{Path, State, rejection::JsonRejection},
@@ -91,6 +93,7 @@ impl RateLimitState {
 #[derive(Clone)]
 struct GatewayState {
     api_key: Option<Arc<str>>,
+    receipt_hmac_key: Option<Arc<str>>,
     providers: Vec<RuntimeProvider>,
     route_objective: RouteObjective,
     rate_limit: RateLimitState,
@@ -196,6 +199,13 @@ struct ExecutionReceipt {
     note: String,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct PersistedReceipt {
+    receipt: ExecutionReceipt,
+    #[serde(default)]
+    hmac_sha256: Option<String>,
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct OpenAiChatRequest {
@@ -259,9 +269,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let receipt_dir = std::env::var("WX_RECEIPT_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("data/receipts"));
+    let receipt_hmac_key = read_secret("WX_RECEIPT_HMAC_KEY")?;
+    if let Some(key) = &receipt_hmac_key {
+        if key.as_bytes().len() < 32 {
+            return Err("WX_RECEIPT_HMAC_KEY must contain at least 32 characters".into());
+        }
+    } else if !socket.ip().is_loopback() {
+        return Err("WX_RECEIPT_HMAC_KEY is required when WX_BIND_ADDR is not loopback".into());
+    }
 
     let state = GatewayState {
         api_key: api_key.map(Arc::from),
+        receipt_hmac_key: receipt_hmac_key.map(Arc::from),
         providers,
         route_objective,
         rate_limit: RateLimitState::new(requests_per_minute),
@@ -436,7 +455,7 @@ async fn execute_workload(
         estimated_cost_microusd,
         provider_latency_ms,
     );
-    persist_receipt(&state.receipt_dir, &receipt).await.map_err(|_| {
+    persist_receipt(&state.receipt_dir, &receipt, state.receipt_hmac_key.as_deref()).await.map_err(|_| {
         api_error(
             StatusCode::INTERNAL_SERVER_ERROR,
             "receipt_persistence_failed",
@@ -552,7 +571,7 @@ async fn openai_compatible_chat(
         estimated_cost_microusd,
         provider_latency_ms,
     );
-    persist_receipt(&state.receipt_dir, &receipt).await.map_err(|_| {
+    persist_receipt(&state.receipt_dir, &receipt, state.receipt_hmac_key.as_deref()).await.map_err(|_| {
         api_error(
             StatusCode::INTERNAL_SERVER_ERROR,
             "receipt_persistence_failed",
@@ -592,13 +611,61 @@ async fn get_receipt(
             "No receipt exists for this identifier.",
         )
     })?;
-    let receipt = serde_json::from_slice::<ExecutionReceipt>(&bytes).map_err(|_| {
-        api_error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "receipt_invalid",
-            "The stored receipt could not be decoded.",
-        )
-    })?;
+    let receipt = match serde_json::from_slice::<PersistedReceipt>(&bytes) {
+        Ok(stored) => {
+            let payload = serde_json::to_vec(&stored.receipt).map_err(|_| {
+                api_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "receipt_invalid",
+                    "The stored receipt could not be decoded.",
+                )
+            })?;
+            match (state.receipt_hmac_key.as_deref(), stored.hmac_sha256.as_deref()) {
+                (Some(key), Some(signature)) => {
+                    let expected = hmac_sha256_hex(key.as_bytes(), &payload);
+                    if !constant_time_eq(expected.as_bytes(), signature.as_bytes()) {
+                        return Err(api_error(
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "receipt_integrity_failed",
+                            "The stored receipt failed its integrity check.",
+                        ));
+                    }
+                }
+                (Some(_), None) => {
+                    return Err(api_error(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "receipt_integrity_missing",
+                        "The stored receipt is unsigned but integrity verification is required.",
+                    ));
+                }
+                (None, Some(_)) => {
+                    return Err(api_error(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "receipt_integrity_key_unavailable",
+                        "This receipt is signed, but the verification key is not configured.",
+                    ));
+                }
+                (None, None) => {}
+            }
+            stored.receipt
+        }
+        Err(_) if state.receipt_hmac_key.is_none() => {
+            serde_json::from_slice::<ExecutionReceipt>(&bytes).map_err(|_| {
+                api_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "receipt_invalid",
+                    "The stored receipt could not be decoded.",
+                )
+            })?
+        }
+        Err(_) => {
+            return Err(api_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "receipt_integrity_missing",
+                "The stored receipt is not in the signed receipt format required by this gateway.",
+            ));
+        }
+    };
     Ok(Json(receipt))
 }
 
@@ -897,10 +964,17 @@ fn build_receipt(
 async fn persist_receipt(
     directory: &std::path::Path,
     receipt: &ExecutionReceipt,
+    hmac_key: Option<&str>,
 ) -> std::io::Result<()> {
     fs::create_dir_all(directory).await?;
     let path = directory.join(format!("{}.json", receipt.id));
-    let bytes = serde_json::to_vec_pretty(receipt).map_err(std::io::Error::other)?;
+    let payload = serde_json::to_vec(receipt).map_err(std::io::Error::other)?;
+    let hmac_sha256 = hmac_key.map(|key| hmac_sha256_hex(key.as_bytes(), &payload));
+    let stored = PersistedReceipt {
+        receipt: receipt.clone(),
+        hmac_sha256,
+    };
+    let bytes = serde_json::to_vec_pretty(&stored).map_err(std::io::Error::other)?;
 
     let mut file = fs::OpenOptions::new()
         .create_new(true)
@@ -909,6 +983,17 @@ async fn persist_receipt(
         .await?;
     file.write_all(&bytes).await?;
     file.sync_all().await
+}
+
+fn hmac_sha256_hex(key: &[u8], payload: &[u8]) -> String {
+    let mut mac = Hmac::<Sha256>::new_from_slice(key)
+        .expect("HMAC accepts keys of any length");
+    mac.update(payload);
+    mac.finalize()
+        .into_bytes()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 fn provider_error(error: ProviderError) -> (StatusCode, Json<ApiError>) {
@@ -971,6 +1056,7 @@ mod tests {
     ) -> GatewayState {
         GatewayState {
             api_key: api_key.map(Arc::from),
+            receipt_hmac_key: None,
             providers: vec![RuntimeProvider {
                 profile: ProviderProfile {
                     name: "test-provider".to_owned(),
@@ -1018,6 +1104,15 @@ mod tests {
             axum::serve(listener, upstream).await.unwrap();
         });
         (format!("http://{address}/v1"), task)
+    }
+
+    #[test]
+    fn hmac_signature_is_keyed_and_changes_when_payload_changes() {
+        let key = b"test-receipt-integrity-key-at-least-32-bytes";
+        let signature = hmac_sha256_hex(key, b"receipt payload");
+        assert_eq!(signature, hmac_sha256_hex(key, b"receipt payload"));
+        assert_ne!(signature, hmac_sha256_hex(key, b"tampered payload"));
+        assert_ne!(signature, hmac_sha256_hex(b"different key with sufficient entropy", b"receipt payload"));
     }
 
     #[test]
