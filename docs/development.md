@@ -98,6 +98,7 @@ curl -sS -X POST http://127.0.0.1:8080/v1/workloads/execute \
 |---|---|---|
 | WX_BIND_ADDR | 127.0.0.1:8080 | Gateway bind address |
 | WX_API_KEY / WX_API_KEY_FILE | unset | Bearer key; required for non-loopback; min. 32 chars |
+| WX_RECEIPT_HMAC_KEY / WX_RECEIPT_HMAC_KEY_FILE | unset | HMAC key for receipt integrity; required for non-loopback; min. 32 chars |
 | WX_PROVIDER_CATALOG_FILE | unset | Optional provider profile JSON; absent means legacy single profile |
 | WX_ROUTE_OBJECTIVE | balanced | balanced, quality, cost, latency |
 | WX_RATE_LIMIT_PER_MINUTE | 120 | Per-key, process-local fixed-window limit |
@@ -139,6 +140,6 @@ Provider tests use local mock servers, not live credentials.
 - require_human_approval=true is blocked until approval workflow exists.
 - Streaming, multimodal inputs, and embeddings are unsupported.
 - Acceptance checks are narrow and do not prove semantic truth.
-- Receipts are local JSON metadata, not a tamper-evident ledger.
+- When `WX_RECEIPT_HMAC_KEY` is configured, each receipt file includes an HMAC-SHA-256 signature checked on retrieval. This detects content alteration but not deletion/rollback and is not a distributed append-only ledger. Local loopback development can still run unsigned.
 
 Keep policy deterministic and unit-tested. Never log raw prompts, credentials, or model payloads by default. Never accept provider URLs from workload input.
