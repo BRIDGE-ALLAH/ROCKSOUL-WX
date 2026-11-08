@@ -1,9 +1,7 @@
 use axum::{
     Json, Router,
-    body::{Body, to_bytes},
     extract::rejection::JsonRejection,
-    http::{Request, StatusCode},
-    response::IntoResponse,
+    http::StatusCode,
     routing::{get, post},
 };
 use serde::Serialize;
@@ -84,6 +82,7 @@ async fn plan_workload(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::{body::{Body, to_bytes}, http::Request};
     use tower::ServiceExt;
 
     #[tokio::test]
