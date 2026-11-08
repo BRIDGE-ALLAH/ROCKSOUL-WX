@@ -70,10 +70,12 @@ pub fn validate(contract: &WorkloadContract) -> Result<(), Vec<PolicyViolation>>
             ));
         }
 
-        let has_trusted_location = contract
-            .allowed_execution
-            .iter()
-            .any(|location| matches!(location, ExecutionLocation::Local | ExecutionLocation::PrivateCloud));
+        let has_trusted_location = contract.allowed_execution.iter().any(|location| {
+            matches!(
+                location,
+                ExecutionLocation::Local | ExecutionLocation::PrivateCloud
+            )
+        });
 
         if !has_trusted_location {
             violations.push(PolicyViolation::new(
@@ -125,10 +127,16 @@ mod tests {
         };
 
         let violations = validate(&contract).expect_err("public cloud must be rejected");
-        assert!(violations.iter().any(|item| item.code == "public_cloud_egress_denied"));
-        assert!(violations
-            .iter()
-            .any(|item| item.code == "sensitive_data_public_cloud_forbidden"));
+        assert!(
+            violations
+                .iter()
+                .any(|item| item.code == "public_cloud_egress_denied")
+        );
+        assert!(
+            violations
+                .iter()
+                .any(|item| item.code == "sensitive_data_public_cloud_forbidden")
+        );
     }
 
     #[test]
