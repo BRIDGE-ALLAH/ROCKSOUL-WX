@@ -375,8 +375,8 @@ mod tests {
             profile("cloud", ExecutionLocation::PublicCloud, 99, 10, 1),
             profile("local", ExecutionLocation::Local, 60, 900, 50),
         ];
-        let selected = select_provider(&contract, &providers, RouteObjective::Quality).unwrap();
-        assert_eq!(selected.name, "local");
+        let result = select_provider(&contract, &providers, RouteObjective::Quality);
+        assert!(matches!(result, Err(RouteError::PolicyRejected(_))));
     }
 
     #[test]
