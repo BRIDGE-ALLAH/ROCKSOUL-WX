@@ -1,0 +1,84 @@
+name: rocksoul-wx
+
+services:
+  gateway:
+    image: ghcr.io/bridge-allah/rocksoul-wx/gateway:${WX_IMAGE_TAG:?Set WX_IMAGE_TAG to a published release}
+    pull_policy: always
+    restart: unless-stopped
+    expose:
+      - "8080"
+    environment:
+      WX_BIND_ADDR: "0.0.0.0:8080"
+      WX_API_KEY_FILE: /run/secrets/gateway_api_key
+      WX_PRIMARY_PROVIDER_API_KEY_FILE: /run/secrets/primary_provider_api_key
+      WX_PROVIDER_CATALOG_FILE: /etc/rocksoul/providers.json
+      WX_ROUTE_OBJECTIVE: ${WX_ROUTE_OBJECTIVE:-balanced}
+      WX_RATE_LIMIT_PER_MINUTE: ${WX_RATE_LIMIT_PER_MINUTE:-120}
+      WX_CORS_ORIGINS: ${WX_CORS_ORIGINS:?Set WX_CORS_ORIGINS to the hosted Command Deck origin}
+      WX_RECEIPT_DIR: /var/lib/rocksoul/receipts
+    secrets:
+      - gateway_api_key
+      - primary_provider_api_key
+    volumes:
+      - rocksoul_wx_receipts:/var/lib/rocksoul/receipts
+      - ./config/providers.production.json:/etc/rocksoul/providers.json:ro
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 128
+    mem_limit: 2g
+    cpus: 2.0
+    networks:
+      - backplane
+      - provider_egress
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    depends_on:
+      - gateway
+    environment:
+      WX_DOMAIN: ${WX_DOMAIN:?Set WX_DOMAIN to the API DNS name}
+      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL for certificate registration}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - rocksoul_wx_caddy_data:/data
+      - rocksoul_wx_caddy_config:/config
+    networks:
+      - edge
+      - backplane
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  edge:
+  backplane:
+    internal: true
+  provider_egress:
+
+volumes:
+  rocksoul_wx_receipts:
+  rocksoul_wx_caddy_data:
+  rocksoul_wx_caddy_config:
+
+secrets:
+  gateway_api_key:
+    file: ${WX_GATEWAY_KEY_FILE:-./secrets/gateway_api_key}
+  primary_provider_api_key:
+    file: ${WX_PRIMARY_PROVIDER_KEY_FILE:-./secrets/primary_provider_api_key}
