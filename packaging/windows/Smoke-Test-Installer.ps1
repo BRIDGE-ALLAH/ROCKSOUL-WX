@@ -4,6 +4,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$InstallerPath = (Resolve-Path -LiteralPath $InstallerPath).Path
 $installDirectory = Join-Path $env:LOCALAPPDATA "Programs\ROCKSOUL-WX"
 $startScript = Join-Path $installDirectory "Start-Gateway.ps1"
 $testScript = Join-Path $installDirectory "Test-Gateway.ps1"
