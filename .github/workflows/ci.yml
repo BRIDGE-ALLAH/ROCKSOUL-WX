@@ -81,5 +81,6 @@ jobs:
           mkdir -p secrets config
           printf 'ci-gateway-secret-placeholder-32-characters' > secrets/gateway_api_key
           printf 'ci-provider-secret-placeholder' > secrets/primary_provider_api_key
+          printf 'ci-receipt-hmac-ci-placeholder-32-bytes' > secrets/receipt_hmac_key
           cp config/providers.production.example.json config/providers.production.json
           docker compose --env-file .env.production.example -f compose.production.yaml config --quiet
