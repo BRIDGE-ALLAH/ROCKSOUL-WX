@@ -46,7 +46,7 @@ fn App() -> Element {
                     }
                     div { class: "topbar-right",
                         span { class: "status-pill", "●  LIVE API MODE" }
-                        span { class: "version", "v0.2.0" }
+                        span { class: "version", "v0.2.1" }
                     }
                 }
                 section { class: "hero",
