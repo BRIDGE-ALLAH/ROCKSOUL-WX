@@ -87,6 +87,10 @@ pub fn validate_catalog(profiles: &[ProviderProfile]) -> Result<(), RouteError> 
         return Err(RouteError::InvalidCatalog("at least one provider is required".into()));
     }
 
+    if !profiles.iter().any(|profile| profile.enabled) {
+        return Err(RouteError::InvalidCatalog("at least one provider must be enabled".into()));
+    }
+
     let mut names = std::collections::HashSet::new();
     for profile in profiles {
         if profile.name.trim().is_empty()
