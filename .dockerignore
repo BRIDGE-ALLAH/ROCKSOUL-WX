@@ -1,0 +1,9 @@
+.git
+.env
+.env.*
+!.env.example
+target
+dist
+build
+data
+*.log
