@@ -681,6 +681,13 @@ async fn get_receipt(
             ));
         }
     };
+    if receipt.id != id {
+        return Err(api_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "receipt_integrity_failed",
+            "The receipt identifier does not match its storage key.",
+        ));
+    }
     Ok(Json(receipt))
 }
 
