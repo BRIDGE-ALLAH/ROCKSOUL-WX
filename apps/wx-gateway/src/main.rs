@@ -104,21 +104,21 @@ enum AcceptanceStatus {
     NeedsDefinition,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 struct CriterionResult {
     criterion: String,
     passed: Option<bool>,
     detail: String,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 struct AcceptanceSummary {
     status: AcceptanceStatus,
     checks: Vec<CriterionResult>,
-    note: &'static str,
+    note: String,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 struct ExecutionReceipt {
     id: Uuid,
     workload_id: Uuid,
@@ -471,7 +471,7 @@ async fn openai_compatible_chat(
     let acceptance = AcceptanceSummary {
         status: AcceptanceStatus::NotRequested,
         checks: Vec::new(),
-        note: "The compatible chat endpoint does not declare acceptance criteria; output is not verified.",
+        note: "The compatible chat endpoint does not declare acceptance criteria; output is not verified.".to_owned(),
     };
     let receipt = build_receipt(
         &state,
@@ -619,7 +619,7 @@ fn evaluate_acceptance(criteria: &[String], output: &str) -> AcceptanceSummary {
         return AcceptanceSummary {
             status: AcceptanceStatus::NotRequested,
             checks: Vec::new(),
-            note: "No acceptance criteria were supplied; the output is not verified.",
+            note: "No acceptance criteria were supplied; the output is not verified.".to_owned(),
         };
     }
 
@@ -694,7 +694,7 @@ fn evaluate_acceptance(criteria: &[String], output: &str) -> AcceptanceSummary {
     AcceptanceSummary {
         status,
         checks,
-        note: "Passed means only the listed supported checks passed; it is not proof of semantic truth.",
+        note: "Passed means only the listed supported checks passed; it is not proof of semantic truth.".to_owned(),
     }
 }
 
@@ -723,7 +723,7 @@ fn build_receipt(
         raw_data_egress: egress,
         usage,
         acceptance,
-        note: "Receipt records execution metadata and named checks; it does not prove semantic correctness.",
+        note: "Receipt records execution metadata and named checks; it does not prove semantic correctness.".to_owned(),
     }
 }
 
