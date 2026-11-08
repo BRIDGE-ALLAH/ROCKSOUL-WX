@@ -231,11 +231,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     let mut providers = Vec::with_capacity(profiles.len());
     for profile in profiles {
-        if profile.location == ExecutionLocation::PublicCloud
+        if profile.location != ExecutionLocation::Local
             && !profile.base_url.starts_with("https://")
         {
             return Err(format!(
-                "public-cloud provider '{}' must use HTTPS",
+                "non-local provider '{}' must use HTTPS",
                 profile.name
             )
             .into());
