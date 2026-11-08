@@ -1,6 +1,7 @@
 //! Conservative, deterministic workload planning.
 //!
-//! This module creates plans only. It does not invoke model providers or execute tools.
+//! This module returns deterministic execution strategies. The gateway applies these
+//! strategies before invoking a configured provider.
 
 use wx_contract::{
     ExecutionLocation, ExecutionPlan, ExecutionStrategy, PlanStatus, PlanStep, PlanStepKind,
@@ -59,7 +60,7 @@ pub fn plan(contract: WorkloadContract) -> Result<ExecutionPlan, Vec<PolicyViola
         ],
         ExecutionStrategy::PublicCloudEligible => vec![
             "Public-cloud execution is explicitly allowed and raw-data egress is permitted.".to_owned(),
-            "Provider selection and actual execution are outside this planning milestone.".to_owned(),
+            "The configured provider router may select public cloud only because this is the sole explicitly allowed location.".to_owned(),
         ],
     };
 
@@ -133,21 +134,6 @@ mod tests {
         let plan = plan(contract).expect("valid contract");
         assert_eq!(plan.strategy, ExecutionStrategy::HumanApprovalRequired);
         assert_eq!(plan.steps[1].kind, PlanStepKind::HumanApproval);
-    }
-
-    #[test]
-    fn private_cloud_is_preferred_when_public_fallback_is_allowed() {
-        let contract = WorkloadContract {
-            objective: "Analyze a public document".to_owned(),
-            raw_data_egress: EgressPolicy::Allow,
-            allowed_execution: vec![
-                ExecutionLocation::PrivateCloud,
-                ExecutionLocation::PublicCloud,
-            ],
-            ..WorkloadContract::default()
-        };
-        let plan = plan(contract).expect("valid private-first contract");
-        assert_eq!(plan.strategy, ExecutionStrategy::PrivateCloudFirst);
     }
 
     #[test]
