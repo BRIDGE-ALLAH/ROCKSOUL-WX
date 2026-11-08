@@ -6,7 +6,38 @@ services:
       - "127.0.0.1:11434:11434"
     volumes:
       - rocksoul_wx_ollama:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "ps"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rocksoul-wx-gateway
+    environment:
+      WX_BIND_ADDR: "0.0.0.0:8080"
+      WX_API_KEY: ${WX_API_KEY:?Copy .env.example to .env and set a 32+ character WX_API_KEY}
+      WX_UPSTREAM_NAME: ${WX_UPSTREAM_NAME:-ollama}
+      WX_UPSTREAM_BASE_URL: ${WX_UPSTREAM_BASE_URL:-http://ollama:11434/v1}
+      WX_UPSTREAM_API_KEY: ${WX_UPSTREAM_API_KEY:-}
+      WX_UPSTREAM_MODEL: ${WX_UPSTREAM_MODEL:-llama3.2}
+      WX_UPSTREAM_LOCATION: ${WX_UPSTREAM_LOCATION:-local}
+      WX_UPSTREAM_TIMEOUT_SECONDS: ${WX_UPSTREAM_TIMEOUT_SECONDS:-60}
+      WX_CORS_ORIGINS: ${WX_CORS_ORIGINS:-http://localhost:8081,http://127.0.0.1:8081}
+      WX_RECEIPT_DIR: /var/lib/rocksoul/receipts
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - rocksoul_wx_receipts:/var/lib/rocksoul/receipts
+    depends_on:
+      ollama:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:
   rocksoul_wx_ollama:
+  rocksoul_wx_receipts:
