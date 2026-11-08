@@ -18,12 +18,14 @@ default-members = [
 ]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 rust-version = "1.85"
 
 [workspace.dependencies]
 axum = { version = "0.8", features = ["json"] }
+hmac = "0.12"
+sha2 = "0.10"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 dioxus = { version = "0.7", features = ["web"] }
 serde = { version = "1", features = ["derive"] }

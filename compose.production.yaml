@@ -10,6 +10,7 @@ services:
     environment:
       WX_BIND_ADDR: "0.0.0.0:8080"
       WX_API_KEY_FILE: /run/secrets/gateway_api_key
+      WX_RECEIPT_HMAC_KEY_FILE: /run/secrets/receipt_hmac_key
       WX_PRIMARY_PROVIDER_API_KEY_FILE: /run/secrets/primary_provider_api_key
       WX_PROVIDER_CATALOG_FILE: /etc/rocksoul/providers.json
       WX_ROUTE_OBJECTIVE: ${WX_ROUTE_OBJECTIVE:-balanced}
@@ -19,6 +20,7 @@ services:
     secrets:
       - gateway_api_key
       - primary_provider_api_key
+      - receipt_hmac_key
     volumes:
       - rocksoul_wx_receipts:/var/lib/rocksoul/receipts
       - ./config/providers.production.json:/etc/rocksoul/providers.json:ro
@@ -79,3 +81,5 @@ secrets:
     file: ${WX_GATEWAY_KEY_FILE:-./secrets/gateway_api_key}
   primary_provider_api_key:
     file: ${WX_PRIMARY_PROVIDER_KEY_FILE:-./secrets/primary_provider_api_key}
+  receipt_hmac_key:
+    file: ${WX_RECEIPT_HMAC_KEY_FILE:-./secrets/receipt_hmac_key}

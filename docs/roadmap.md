@@ -74,7 +74,17 @@ Acceptance:
 
 ## M4 — Durable audit and operational reliability
 
-**Status: not implemented beyond local JSON metadata receipts and process-local limiting.**
+**Status: partially implemented; durable storage and operational reliability remain open.**
+
+Implemented in the receipt-integrity hardening branch:
+- Per-record HMAC-SHA-256 signatures when `WX_RECEIPT_HMAC_KEY` is configured.
+- Signature verification on retrieval; altered signed records fail closed.
+- Non-loopback binds require a 32-character receipt integrity key.
+
+Still required:
+- Database-backed receipt persistence, retention, and tested backup/restore.
+- Detection of deletion/rollback and append-only audit history.
+- Distributed rate limiting, metrics/alerts, retry safeguards, and recovery exercise.
 
 Required work:
 - Durable database-backed receipt storage with migrations, access controls, retention, and backup/restore.

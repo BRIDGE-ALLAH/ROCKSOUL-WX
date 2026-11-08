@@ -61,9 +61,14 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path "dist/windows" | Out-Null
-          & "C:/Program Files (x86)/Inno Setup 6/ISCC.exe" "/DAppVersion=0.2.0" "packaging/windows/ROCKSOUL-WX.iss"
+          $manifest = Get-Content "Cargo.toml" -Raw
+          if ($manifest -notmatch '(?s)\[workspace\.package\]\s+version\s*=\s*"([^"]+)"') {
+            throw "Could not read workspace.package.version from Cargo.toml."
+          }
+          $appVersion = $Matches[1]
+          & "C:/Program Files (x86)/Inno Setup 6/ISCC.exe" "/DAppVersion=$appVersion" "packaging/windows/ROCKSOUL-WX.iss"
           if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed with exit code $LASTEXITCODE" }
-          if (-not (Test-Path "dist/windows/ROCKSOUL-WX-Setup-0.2.0.exe")) {
+          if (-not (Test-Path "dist/windows/ROCKSOUL-WX-Setup-$appVersion.exe")) {
             throw "Expected Windows installer output was not produced."
           }
 
@@ -81,5 +86,6 @@ jobs:
           mkdir -p secrets config
           printf 'ci-gateway-secret-placeholder-32-characters' > secrets/gateway_api_key
           printf 'ci-provider-secret-placeholder' > secrets/primary_provider_api_key
+          printf 'ci-receipt-hmac-ci-placeholder-32-bytes' > secrets/receipt_hmac_key
           cp config/providers.production.example.json config/providers.production.json
           docker compose --env-file .env.production.example -f compose.production.yaml config --quiet
