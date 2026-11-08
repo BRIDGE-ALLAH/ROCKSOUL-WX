@@ -22,7 +22,7 @@ services:
       WX_BIND_ADDR: "0.0.0.0:8080"
       WX_API_KEY: ${WX_API_KEY:?Copy .env.example to .env and set a 32+ character WX_API_KEY}
       WX_UPSTREAM_NAME: ${WX_UPSTREAM_NAME:-ollama}
-      WX_UPSTREAM_BASE_URL: ${WX_UPSTREAM_BASE_URL:-http://ollama:11434/v1}
+      WX_UPSTREAM_BASE_URL: http://ollama:11434/v1
       WX_UPSTREAM_API_KEY: ${WX_UPSTREAM_API_KEY:-}
       WX_UPSTREAM_MODEL: ${WX_UPSTREAM_MODEL:-llama3.2}
       WX_UPSTREAM_LOCATION: ${WX_UPSTREAM_LOCATION:-local}
