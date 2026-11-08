@@ -3,7 +3,7 @@
 //! The adapter only accepts an operator-configured base URL. Callers cannot supply
 //! an arbitrary URL, which keeps request routing out of untrusted workload input.
 
-use reqwest::{Client, StatusCode, Url};
+use reqwest::{Client, Url};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::time::Duration;
