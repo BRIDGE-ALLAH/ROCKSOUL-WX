@@ -130,7 +130,7 @@ struct ExecutionReceipt {
     raw_data_egress: EgressPolicy,
     usage: Option<TokenUsage>,
     acceptance: AcceptanceSummary,
-    note: &'static str,
+    note: String,
 }
 
 #[derive(Deserialize)]
