@@ -114,7 +114,7 @@ pub struct ExecutionPlan {
     pub rationale: Vec<String>,
     pub max_cost_microusd: Option<u64>,
     pub deadline_ms: Option<u64>,
-    /// A plan is a proposal only; execution is not implemented in the first milestone.
+    /// A plan is a constrained proposal. Runtime policy and provider selection are rechecked before execution.
     pub execution_status: PlanStatus,
 }
 
